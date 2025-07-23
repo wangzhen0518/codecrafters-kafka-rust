@@ -1,7 +1,5 @@
-use std::time::Duration;
-
 use tokio::{
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
 
@@ -11,14 +9,23 @@ mod utils;
 use message::ResponseMessage;
 
 async fn process(mut socket: TcpStream) {
+    let mut buffer = [0; 1024];
+    let num = socket
+        .read(&mut buffer)
+        .await
+        .expect("Failed to read input");
+
+    tracing::debug!("Receive {} bytes:\n{:?}", num, &buffer[..num]);
+
     let response = ResponseMessage::new(7, Vec::new());
     let binary_code = response.to_bytes().expect("Failed to encode");
+
     tracing::debug!("Response {:?}", binary_code);
+
     socket
         .write_all(&binary_code)
         .await
         .expect("Failed to write response");
-    tokio::time::sleep(Duration::from_millis(1)).await;
 }
 
 #[tokio::main]
