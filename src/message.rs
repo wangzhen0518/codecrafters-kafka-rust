@@ -1,12 +1,13 @@
-use bincode::Options;
-use serde::{Deserialize, Serialize};
+use std::io;
 
-#[derive(Debug, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Debug, Encode, Decode)]
 pub struct HeaderV0 {
     correlation_id: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Encode, Decode)]
 pub struct ResponseMessage {
     message_size: u32,
     header: HeaderV0,
@@ -30,10 +31,11 @@ impl ResponseMessage {
         }
     }
 
-    pub fn to_bytes(&self) -> bincode::Result<Vec<u8>> {
-        bincode::options()
-            .with_fixint_encoding()
+    pub fn to_bytes(&self) -> Result<Vec<u8>, io::Error> {
+        let config = bincode::config::standard()
             .with_big_endian()
-            .serialize(self)
+            .with_fixed_int_encoding();
+        bincode::encode_to_vec(self, config)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))
     }
 }

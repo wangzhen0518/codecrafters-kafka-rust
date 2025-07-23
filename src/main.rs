@@ -15,17 +15,15 @@ async fn process(mut socket: TcpStream) {
         .await
         .expect("Failed to read input");
 
-    tracing::debug!("Receive {} bytes:\n{:?}", num, &buffer[..num]);
-
     let response = ResponseMessage::new(7, Vec::new());
     let binary_code = response.to_bytes().expect("Failed to encode");
-
-    tracing::debug!("Response {:?}", binary_code);
-
     socket
         .write_all(&binary_code)
         .await
         .expect("Failed to write response");
+
+    tracing::debug!("Receive {} bytes:\n{:?}", num, &buffer[..num]);
+    tracing::debug!("Response {:?}", binary_code);
 }
 
 #[tokio::main]

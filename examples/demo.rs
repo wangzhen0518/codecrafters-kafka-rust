@@ -1,15 +1,13 @@
-use bincode::Options;
 use bytes::Bytes;
 use std::mem;
 
 use codecrafters_kafka::message::{HeaderV0, ResponseMessage};
 
 fn main() {
-    let x = bincode::options()
+    let config = bincode::config::standard()
         .with_big_endian()
-        .with_fixint_encoding()
-        .serialize(&4_u32)
-        .unwrap();
+        .with_fixed_int_encoding();
+    let x = bincode::encode_to_vec(4_u32, config).unwrap();
     println!("{:?}", x);
     println!(
         "Size of ResponseMessage: {}",
