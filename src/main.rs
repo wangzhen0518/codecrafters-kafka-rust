@@ -1,16 +1,41 @@
-#![allow(unused_imports)]
-use std::net::TcpListener;
+use std::time::Duration;
 
-fn main() {
-    let listener = TcpListener::bind("127.0.0.1:9092").unwrap();
-    for stream in listener.incoming() {
-        match stream {
-            Ok(_stream) => {
-                println!("accepted new connection");
+use tokio::{
+    io::AsyncWriteExt,
+    net::{TcpListener, TcpStream},
+};
+
+mod message;
+mod utils;
+
+use message::ResponseMessage;
+
+async fn process(mut socket: TcpStream) {
+    let response = ResponseMessage::new(7, Vec::new());
+    let binary_code = response.to_bytes().expect("Failed to encode");
+    tracing::debug!("Response {:?}", binary_code);
+    socket
+        .write_all(&binary_code)
+        .await
+        .expect("Failed to write response");
+    tokio::time::sleep(Duration::from_millis(1)).await;
+}
+
+#[tokio::main]
+async fn main() {
+    utils::config_logger();
+
+    let listener = TcpListener::bind("127.0.0.1:9092")
+        .await
+        .expect("Failed to bind to 127.0.0.1:9092");
+
+    loop {
+        match listener.accept().await {
+            Ok((socket, _addr)) => {
+                tracing::info!("Connect with {:?}", socket);
+                tokio::spawn(process(socket));
             }
-            Err(e) => {
-                println!("error: {}", e);
-            }
+            Err(err) => tracing::error!("Connect error: {:?}", err),
         }
     }
 }
