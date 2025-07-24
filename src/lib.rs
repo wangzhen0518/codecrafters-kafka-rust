@@ -1,3 +1,4 @@
+pub mod common_struct;
 pub mod decode;
 pub mod encode;
 pub mod request_message;

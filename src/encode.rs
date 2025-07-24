@@ -39,35 +39,40 @@ impl<T: Encode> Encode for &[T] {
 
 impl<T: Encode> Encode for Vec<T> {
     fn encode(&self) -> Vec<u8> {
-        if self.len() >= u8::MAX as usize {
-            panic!(
-                "vector length({}) is greater then u8::MAX({})",
-                self.len(),
-                u8::MAX
-            );
-        } else {
-            let mut encode_res = vec![(self.len() + 1) as u8];
-            for item in self.iter() {
-                encode_res.append(&mut item.encode());
-            }
-            encode_res
+        self.as_slice().encode()
+    }
+}
+
+impl<T: Encode> Encode for Option<Vec<T>> {
+    fn encode(&self) -> Vec<u8> {
+        match self {
+            Some(array) => array.encode(),
+            None => vec![0_u8],
         }
     }
 }
 
-
 impl Encode for String {
     fn encode(&self) -> Vec<u8> {
-        if self.len() >= i16::MAX as usize {
+        if self.len() >= u8::MAX as usize {
             panic!(
                 "string length({}) is greater then i16::MAX({})",
                 self.len(),
                 i16::MAX
             );
         } else {
-            let mut encode_res = (self.len() as i16).to_be_bytes().to_vec();
+            let mut encode_res = vec![(self.len() + 1) as u8];
             encode_res.extend(self.as_bytes());
             encode_res
+        }
+    }
+}
+
+impl Encode for Option<String> {
+    fn encode(&self) -> Vec<u8> {
+        match self {
+            Some(s) => s.encode(),
+            None => vec![0_u8],
         }
     }
 }

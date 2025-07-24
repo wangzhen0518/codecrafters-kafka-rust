@@ -3,6 +3,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
+mod common_struct;
 mod decode;
 mod encode;
 mod request_message;
