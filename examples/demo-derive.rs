@@ -1,8 +1,8 @@
 #![allow(unused)]
 
-use codecrafters_kafka::encode::Encode;
+use codecrafters_kafka::{decode::Decode, encode::Encode};
 
-#[derive(Debug, Encode)]
+#[derive(Debug, Encode, Decode)]
 
 struct MyStruct1 {
     a: i32,

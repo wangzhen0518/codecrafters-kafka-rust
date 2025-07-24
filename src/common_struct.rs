@@ -1,17 +1,17 @@
-use crate::encode::Encode;
+use crate::{decode::Decode, encode::Encode};
 
-#[derive(Debug, Encode)]
-pub struct TagField {
+#[derive(Debug, Encode, Decode)]
+pub struct TagBuffer {
     fields: Option<Vec<TagSection>>,
 }
 
-#[derive(Debug, Encode)]
+#[derive(Debug, Encode, Decode)]
 pub struct TagSection {
     tag: u8,
     data: Vec<u8>,
 }
 
-impl TagField {
+impl TagBuffer {
     pub fn new(fields: Option<Vec<TagSection>>) -> Self {
         Self { fields }
     }

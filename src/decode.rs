@@ -1,7 +1,9 @@
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Seek};
 
 use bytes::Buf;
 use paste::paste;
+
+pub use kafka_serde_derive::Decode;
 
 pub trait Decode {
     fn decode(buffer: &mut Cursor<&[u8]>) -> Self;
@@ -13,10 +15,7 @@ macro_rules! impl_decode_for_integers {
         $(
             impl Decode for $type {
                 fn decode(buffer: &mut Cursor<&[u8]>) -> Self {
-                    // buffer.get_$type() //TODO 减少一次 copy
-                    paste! {
-                        buffer.[<get_ $type>]()
-                    }
+                    paste! { buffer.[<get_ $type>]() }
                 }
             }
         )*
@@ -29,21 +28,52 @@ impl<T: Decode> Decode for Vec<T> {
     fn decode(buffer: &mut Cursor<&[u8]>) -> Self {
         let mut decode_vec = vec![];
         let length = buffer.get_u8();
-        if length > 0 {
-            for _ in 0..length {
-                let item = T::decode(buffer);
-                decode_vec.push(item);
-            }
+        assert!(
+            length > 0,
+            "Vector's length must greater than 0 when decoding"
+        );
+        for _ in 0..length - 1 {
+            let item = T::decode(buffer);
+            decode_vec.push(item);
         }
+
         decode_vec
+    }
+}
+
+impl<T: Decode> Decode for Option<Vec<T>> {
+    fn decode(buffer: &mut Cursor<&[u8]>) -> Self {
+        let length = buffer.get_u8();
+        if length == 0 {
+            None
+        } else {
+            buffer.seek_relative(-1).unwrap();
+            Some(<Vec<T> as Decode>::decode(buffer))
+        }
     }
 }
 
 impl Decode for String {
     fn decode(buffer: &mut Cursor<&[u8]>) -> Self {
-        let length = buffer.get_i16();
-        let mut string_buffer = vec![0; length as usize];
+        let length = buffer.get_u8();
+        assert!(
+            length > 0,
+            "String's length must greater than 0 when decoding"
+        );
+        let mut string_buffer = vec![0; (length - 1) as usize];
         let _ = buffer.read_exact(&mut string_buffer); //TODO 异常处理
         String::from_utf8(string_buffer).expect("Invalid UTF-8") //TODO 异常处理
+    }
+}
+
+impl Decode for Option<String> {
+    fn decode(buffer: &mut Cursor<&[u8]>) -> Self {
+        let length = buffer.get_u8();
+        if length == 0 {
+            None
+        } else {
+            buffer.seek_relative(-1).unwrap();
+            Some(String::decode(buffer))
+        }
     }
 }

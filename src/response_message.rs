@@ -1,6 +1,6 @@
 use std::io;
 
-use crate::common_struct::TagField;
+use crate::common_struct::TagBuffer;
 use crate::encode::Encode;
 use crate::request_message::RequestMessage;
 
@@ -23,15 +23,15 @@ pub struct ResponseHeaderV0 {
 
 #[derive(Debug)]
 pub enum ResponseBody {
-    ApiVersionsV4(ApiVersionsV4),
+    ApiVersionsV4(ApiVersionsV4ResponseBody),
 }
 
 #[derive(Debug, Encode)]
-pub struct ApiVersionsV4 {
+pub struct ApiVersionsV4ResponseBody {
     error_code: i16,
     api_keys: Vec<ApiKey>,
     throttle_time_ms: i32,
-    tag_field: TagField,
+    tag_buffer: TagBuffer,
 }
 
 #[derive(Debug, Encode)]
@@ -39,7 +39,7 @@ pub struct ApiKey {
     api_key: i16,
     min_version: i16,
     max_version: i16,
-    tag_field: TagField,
+    tag_buffer: TagBuffer,
 }
 
 impl ResponseMessage {
@@ -83,29 +83,29 @@ impl Encode for ResponseBody {
     }
 }
 
-impl ApiVersionsV4 {
+impl ApiVersionsV4ResponseBody {
     pub fn new(
         error_code: i16,
         api_keys: Vec<ApiKey>,
         throttle_time_ms: i32,
-        tag_field: TagField,
+        tag_buffer: TagBuffer,
     ) -> Self {
         Self {
             error_code,
             api_keys,
             throttle_time_ms,
-            tag_field,
+            tag_buffer,
         }
     }
 }
 
 impl ApiKey {
-    pub fn new(api_key: i16, min_version: i16, max_version: i16, tag_field: TagField) -> Self {
+    pub fn new(api_key: i16, min_version: i16, max_version: i16, tag_buffer: TagBuffer) -> Self {
         Self {
             api_key,
             min_version,
             max_version,
-            tag_field,
+            tag_buffer,
         }
     }
 }
@@ -123,7 +123,7 @@ pub async fn execute_request(request: &RequestMessage) -> io::Result<ResponseMes
                         API_VERIONS_API_KEY,
                         API_VERSIONS_MIN_VERSION,
                         API_VERSIONS_MAX_VERSION,
-                        TagField::new(None),
+                        TagBuffer::new(None),
                     )],
                 )
             } else {
@@ -131,11 +131,11 @@ pub async fn execute_request(request: &RequestMessage) -> io::Result<ResponseMes
             };
             Ok(ResponseMessage::new(
                 request.header.correlation_id,
-                ResponseBody::ApiVersionsV4(ApiVersionsV4::new(
+                ResponseBody::ApiVersionsV4(ApiVersionsV4ResponseBody::new(
                     error_code,
                     api_keys,
                     0,
-                    TagField::new(None),
+                    TagBuffer::new(None),
                 )),
             ))
         }
