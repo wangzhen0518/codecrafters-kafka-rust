@@ -1,3 +1,5 @@
+pub const U32_SIZE: usize = std::mem::size_of::<i32>();
+
 pub fn config_logger() {
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)

@@ -90,6 +90,7 @@ dependencies = [
  "bincode",
  "bytes",
  "lazy_static",
+ "serde",
  "thiserror",
  "tokio",
  "tracing",

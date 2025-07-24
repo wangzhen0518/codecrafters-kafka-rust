@@ -3,18 +3,19 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
-mod message;
+mod request_message;
+mod response_message;
 mod utils;
 
-use message::ResponseMessage;
-
 async fn process(mut socket: TcpStream) {
-    let request = message::parse_input(&mut socket)
+    let request = request_message::parse_input(&mut socket)
         .await
         .expect("Failed to parse request");
 
-    let response = ResponseMessage::new(request.header.correlation_id, Vec::new());
-    let binary_code = response.to_bytes().expect("Failed to encode");
+    let mut response = response_message::execute_request(&request)
+        .await
+        .expect("Failed to execute request");
+    let binary_code = response.as_serde_bytes().expect("Failed to encode");
     socket
         .write_all(&binary_code)
         .await
