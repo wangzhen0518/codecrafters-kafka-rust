@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use std::mem;
 
-use codecrafters_kafka::message::{HeaderV0, ResponseMessage};
+use codecrafters_kafka::message::{ResponseHeaderV0, ResponseMessage};
 
 fn main() {
     let config = bincode::config::standard()
@@ -13,6 +13,6 @@ fn main() {
         "Size of ResponseMessage: {}",
         mem::size_of::<ResponseMessage>()
     );
-    println!("Size of HeaderV0: {}", mem::size_of::<HeaderV0>());
+    println!("Size of HeaderV0: {}", mem::size_of::<ResponseHeaderV0>());
     println!("Size of Bytes: {}", mem::size_of::<Bytes>());
 }

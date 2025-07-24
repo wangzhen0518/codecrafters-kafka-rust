@@ -89,7 +89,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "bytes",
- "serde",
+ "lazy_static",
  "thiserror",
  "tokio",
  "tracing",

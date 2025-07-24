@@ -1,5 +1,5 @@
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncWriteExt,
     net::{TcpListener, TcpStream},
 };
 
@@ -9,20 +9,18 @@ mod utils;
 use message::ResponseMessage;
 
 async fn process(mut socket: TcpStream) {
-    let mut buffer = [0; 1024];
-    let num = socket
-        .read(&mut buffer)
+    let request = message::parse_input(&mut socket)
         .await
-        .expect("Failed to read input");
+        .expect("Failed to parse request");
 
-    let response = ResponseMessage::new(7, Vec::new());
+    let response = ResponseMessage::new(request.header.correlation_id, Vec::new());
     let binary_code = response.to_bytes().expect("Failed to encode");
     socket
         .write_all(&binary_code)
         .await
         .expect("Failed to write response");
 
-    tracing::debug!("Receive {} bytes:\n{:?}", num, &buffer[..num]);
+    tracing::debug!("Receive Request: {:?}", request);
     tracing::debug!("Response {:?}", binary_code);
 }
 
