@@ -12,18 +12,9 @@ static SERDE_CONFIG: bincode::config::Configuration<
     .with_big_endian()
     .with_fixed_int_encoding();
 
-// #[derive(Debug)]
-// pub struct NullableString {
-//     inner: String,
-// }
-
-// #[derive(Debug)]
-// pub struct CompactArray<T> {
-//     inner: Vec<T>,
-// }
-
 #[derive(Debug, Decode)]
 pub struct RequestMessage {
+    #[allow(dead_code)]
     pub message_size: u32,
     pub header: RequestHeaderV2,
     // pub body: Vec<u8>,

@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use bytes::Bytes;
 use std::mem;
 

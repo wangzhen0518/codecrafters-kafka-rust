@@ -3,6 +3,8 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
+mod decode;
+mod encode;
 mod request_message;
 mod response_message;
 mod utils;
@@ -15,7 +17,7 @@ async fn process(mut socket: TcpStream) {
     let mut response = response_message::execute_request(&request)
         .await
         .expect("Failed to execute request");
-    let binary_code = response.as_serde_bytes().expect("Failed to encode");
+    let binary_code = response.as_bytes();
     socket
         .write_all(&binary_code)
         .await
