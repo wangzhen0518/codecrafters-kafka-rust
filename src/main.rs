@@ -20,8 +20,8 @@ async fn process(mut socket: TcpStream) {
         .await
         .expect("Failed to write response");
 
-    tracing::debug!("Receive Request: {:?}", request);
-    tracing::debug!("Response {:?}", binary_code);
+    tracing::debug!("Receive Request:\n{:?}", request);
+    tracing::debug!("Response:\n{:?}\n{:02x?}", response, binary_code);
 }
 
 #[tokio::main]
