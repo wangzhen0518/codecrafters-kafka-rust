@@ -21,7 +21,7 @@ pub struct ResponseHeaderV0 {
 pub struct ResponseMessage {
     message_size: u32,
     header: ResponseHeaderV0,
-    body: Vec<u8>,
+    // body: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -63,7 +63,7 @@ impl ResponseMessage {
         ResponseMessage {
             message_size,
             header,
-            body,
+            // body,
         }
     }
 
@@ -125,7 +125,7 @@ impl RequestMessage {
 pub async fn parse_input(socket: &mut TcpStream) -> Result<RequestMessage, Box<dyn error::Error>> {
     let message_size = socket.read_u32().await?;
     tracing::debug!("message size: {}", message_size as usize);
-    let mut buffer = vec![0; message_size as usize];
+    let mut buffer = vec![0; message_size as usize + U32_SIZE];
     // let mut buffer = Vec::with_capacity(message_size as usize);
     buffer.splice(..U32_SIZE, message_size.to_be_bytes());
     let _num = socket.read_exact(&mut buffer[U32_SIZE..]).await?;
