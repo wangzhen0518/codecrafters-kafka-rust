@@ -1,11 +1,12 @@
 #![allow(unused)]
 
+use bincode::Decode;
 use bytes::Bytes;
 use std::mem;
 
 use codecrafters_kafka::response_message::{ResponseHeaderV0, ResponseMessage};
 
-#[derive(Debug)]
+#[derive(Debug, Decode)]
 struct MyStruct {
     a: Option<[u8; 1024]>,
 }

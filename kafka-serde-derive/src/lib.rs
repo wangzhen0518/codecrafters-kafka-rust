@@ -25,16 +25,17 @@ fn derive_encode_for_struct(
         syn::Fields::Unit => Punctuated::new(),
     };
 
-    let _inner_contents = fields.iter().enumerate().map(|(idx, field)| {
-        // dbg!(field);
-        match field.ident.as_ref() {
-            Some(name) => quote! {encode_vec.append(&mut self.#name.encode());},
-            None => {
-                let _idx = syn::Index::from(idx);
-                quote! {encode_vec.append(&mut self.#_idx.encode());}
-            }
-        }
-    });
+    let _inner_contents =
+        fields
+            .iter()
+            .enumerate()
+            .map(|(idx, field)| match field.ident.as_ref() {
+                Some(name) => quote! {encode_vec.append(&mut self.#name.encode());},
+                None => {
+                    let _idx = syn::Index::from(idx);
+                    quote! {encode_vec.append(&mut self.#_idx.encode());}
+                }
+            });
 
     quote! {
         impl Encode for #struct_name {
@@ -75,15 +76,15 @@ fn derive_decode_for_struct(
             let field_decodes = fields.named.iter().map(|field| {
                 let field_name = field.ident.as_ref().unwrap();
                 let field_type = &field.ty;
-                quote! { #field_name: <#field_type as Decode>::decode(buffer) }
+                quote! { #field_name: <#field_type as Decode>::decode(buffer)? }
             });
 
             quote! {
                 impl #impl_generics Decode for #struct_name #ty_generics #where_clause {
-                    fn decode(buffer: &mut std::io::Cursor<&[u8]>) -> Self {
-                        Self {
+                    fn decode(buffer: &mut std::io::Cursor<&[u8]>) -> Result<Self, crate::decode::DecodeError> {
+                        Ok(Self {
                             #(#field_decodes,)*
-                        }
+                        })
                     }
                 }
             }
@@ -91,12 +92,12 @@ fn derive_decode_for_struct(
         syn::Fields::Unnamed(fields) => {
             let field_decodes = fields.unnamed.iter().map(|field| {
                 let field_type = &field.ty;
-                quote! {  <#field_type as Decode>::decode(buffer) }
+                quote! {  <#field_type as Decode>::decode(buffer)? }
             });
 
             quote! {
                 impl #impl_generics Decode for #struct_name #ty_generics #where_clause {
-                    fn decode(buffer: &mut std::io::Cursor<&[u8]>) -> Self {
+                    fn decode(buffer: &mut std::io::Cursor<&[u8]>) -> Result<Self, crate::decode::DecodeError> {
                         Self (
                             #(#field_decodes,)*
                         )

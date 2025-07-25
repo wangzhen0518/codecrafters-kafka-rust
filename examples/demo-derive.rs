@@ -1,6 +1,9 @@
 #![allow(unused)]
 
-use codecrafters_kafka::{decode::Decode, encode::Encode};
+use codecrafters_kafka::{
+    decode::{self, Decode},
+    encode::Encode,
+};
 
 #[derive(Debug, Encode, Decode)]
 
