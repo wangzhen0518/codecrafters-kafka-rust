@@ -31,8 +31,8 @@ async fn process(socket: TcpStream) {
             .await
             .expect("Failed to write response");
 
-        tracing::debug!("Receive Request:\n{:?}", request);
-        tracing::debug!("Response:\n{:?}", response);
+        tracing::debug!("Receive Request:\n{:#?}", request);
+        tracing::debug!("Response:\n{:#?}", response);
     }
 }
 

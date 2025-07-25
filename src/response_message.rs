@@ -1,13 +1,11 @@
+use std::collections::HashMap;
 use std::io;
+
+use lazy_static::lazy_static;
 
 use crate::common_struct::TagBuffer;
 use crate::encode::Encode;
 use crate::request_message::RequestMessage;
-
-const API_VERIONS_API_KEY: i16 = 18;
-const API_VERSIONS_MIN_VERSION: i16 = 0;
-const API_VERSIONS_MAX_VERSION: i16 = 4;
-const ERROR_UNSUPPORTED_VERSION: i16 = 35;
 
 #[derive(Debug, Encode)]
 pub struct ResponseMessage {
@@ -34,7 +32,7 @@ pub struct ApiVersionsV4ResponseBody {
     tag_buffer: TagBuffer,
 }
 
-#[derive(Debug, Encode)]
+#[derive(Debug, Encode, Clone)]
 pub struct ApiKey {
     api_key: i16,
     min_version: i16,
@@ -110,25 +108,55 @@ impl ApiKey {
     }
 }
 
+impl PartialEq for ApiKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.api_key == other.api_key
+    }
+}
+
+impl PartialOrd for ApiKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.api_key.cmp(&other.api_key))
+    }
+}
+
+impl Eq for ApiKey {}
+
+impl Ord for ApiKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.api_key.cmp(&other.api_key)
+    }
+}
+
+const UNSUPPORTED_VERSION_ERROR: i16 = 35;
+
+lazy_static! {
+    static ref API_VERSIONS_API_INFO: ApiKey = ApiKey::new(18, 0, 4, TagBuffer::new(None));
+    static ref DESCRIBE_TOPIC_PARTITIONS_API_INFO: ApiKey =
+        ApiKey::new(75, 0, 0, TagBuffer::new(None));
+    static ref SUPPORT_APIS: HashMap<i16, ApiKey> = HashMap::from([
+        (API_VERSIONS_API_INFO.api_key, API_VERSIONS_API_INFO.clone()),
+        (
+            DESCRIBE_TOPIC_PARTITIONS_API_INFO.api_key,
+            DESCRIBE_TOPIC_PARTITIONS_API_INFO.clone(),
+        ),
+    ]);
+}
+
 pub async fn execute_request(request: &RequestMessage) -> io::Result<ResponseMessage> {
     match request.header.request_api_key {
-        API_VERIONS_API_KEY => {
+        api_key if api_key == API_VERSIONS_API_INFO.api_key => {
             let request_api_version = request.header.request_api_version;
-            let (error_code, api_keys) = if request_api_version >= API_VERSIONS_MIN_VERSION
-                && request.header.request_api_version <= API_VERSIONS_MAX_VERSION
+            let (error_code, mut api_keys) = if request_api_version
+                >= API_VERSIONS_API_INFO.min_version
+                && request.header.request_api_version <= API_VERSIONS_API_INFO.max_version
             {
-                (
-                    0,
-                    vec![ApiKey::new(
-                        API_VERIONS_API_KEY,
-                        API_VERSIONS_MIN_VERSION,
-                        API_VERSIONS_MAX_VERSION,
-                        TagBuffer::new(None),
-                    )],
-                )
+                (0, SUPPORT_APIS.values().cloned().collect())
             } else {
-                (ERROR_UNSUPPORTED_VERSION, vec![])
+                (UNSUPPORTED_VERSION_ERROR, vec![])
             };
+            api_keys.sort();
+
             Ok(ResponseMessage::new(
                 request.header.correlation_id,
                 ResponseBody::ApiVersionsV4(ApiVersionsV4ResponseBody::new(
