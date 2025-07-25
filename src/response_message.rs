@@ -1,43 +1,19 @@
-use std::collections::HashMap;
 use std::io;
+use std::{collections::HashMap, io::Cursor};
 
 use lazy_static::lazy_static;
 
-use crate::common_struct::TagBuffer;
-use crate::encode::Encode;
-use crate::request_message::RequestMessage;
+use crate::decode::DecodeResult;
+use crate::request_message::RequestHeaderV2;
+use crate::{
+    common_struct::TagBuffer, decode::Decode, encode::Encode, request_message::RequestMessage,
+};
 
 #[derive(Debug, Encode)]
 pub struct ResponseMessage {
     message_size: u32,
     header: ResponseHeaderV0,
     body: ResponseBody,
-}
-
-#[derive(Debug, Encode)]
-pub struct ResponseHeaderV0 {
-    correlation_id: i32,
-}
-
-#[derive(Debug)]
-pub enum ResponseBody {
-    ApiVersionsV4(ApiVersionsV4ResponseBody),
-}
-
-#[derive(Debug, Encode)]
-pub struct ApiVersionsV4ResponseBody {
-    error_code: i16,
-    api_keys: Vec<ApiKey>,
-    throttle_time_ms: i32,
-    tag_buffer: TagBuffer,
-}
-
-#[derive(Debug, Encode, Clone)]
-pub struct ApiKey {
-    api_key: i16,
-    min_version: i16,
-    max_version: i16,
-    tag_buffer: TagBuffer,
 }
 
 impl ResponseMessage {
@@ -65,6 +41,26 @@ impl ResponseMessage {
             self.encode()
         }
     }
+
+    pub fn decode(buffer: &mut Cursor<&[u8]>, request_api_key: i16) -> DecodeResult<Self> {
+        let message_size = u32::decode(buffer)?;
+        let header = ResponseHeaderV0::decode(buffer)?;
+        let body = if request_api_key == API_VERSIONS_API_INFO.api_key {
+            ResponseBody::ApiVersionsV4(ApiVersionsV4ResponseBody::decode(buffer)?)
+        } else {
+            unimplemented!()
+        };
+        Ok(ResponseMessage {
+            message_size,
+            header,
+            body,
+        })
+    }
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct ResponseHeaderV0 {
+    correlation_id: i32,
 }
 
 impl ResponseHeaderV0 {
@@ -73,12 +69,25 @@ impl ResponseHeaderV0 {
     }
 }
 
+#[derive(Debug)]
+pub enum ResponseBody {
+    ApiVersionsV4(ApiVersionsV4ResponseBody),
+}
+
 impl Encode for ResponseBody {
     fn encode(&self) -> Vec<u8> {
         match self {
             ResponseBody::ApiVersionsV4(inner) => inner.encode(),
         }
     }
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct ApiVersionsV4ResponseBody {
+    error_code: i16,
+    api_keys: Vec<ApiKey>,
+    throttle_time_ms: i32,
+    tag_buffer: TagBuffer,
 }
 
 impl ApiVersionsV4ResponseBody {
@@ -95,6 +104,14 @@ impl ApiVersionsV4ResponseBody {
             tag_buffer,
         }
     }
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct ApiKey {
+    pub api_key: i16,
+    pub min_version: i16,
+    pub max_version: i16,
+    pub tag_buffer: TagBuffer,
 }
 
 impl ApiKey {
@@ -131,10 +148,10 @@ impl Ord for ApiKey {
 const UNSUPPORTED_VERSION_ERROR: i16 = 35;
 
 lazy_static! {
-    static ref API_VERSIONS_API_INFO: ApiKey = ApiKey::new(18, 0, 4, TagBuffer::new(None));
-    static ref DESCRIBE_TOPIC_PARTITIONS_API_INFO: ApiKey =
+    pub static ref API_VERSIONS_API_INFO: ApiKey = ApiKey::new(18, 0, 4, TagBuffer::new(None));
+    pub static ref DESCRIBE_TOPIC_PARTITIONS_API_INFO: ApiKey =
         ApiKey::new(75, 0, 0, TagBuffer::new(None));
-    static ref SUPPORT_APIS: HashMap<i16, ApiKey> = HashMap::from([
+    pub static ref SUPPORT_APIS: HashMap<i16, ApiKey> = HashMap::from([
         (API_VERSIONS_API_INFO.api_key, API_VERSIONS_API_INFO.clone()),
         (
             DESCRIBE_TOPIC_PARTITIONS_API_INFO.api_key,
@@ -143,33 +160,46 @@ lazy_static! {
     ]);
 }
 
-pub async fn execute_request(request: &RequestMessage) -> io::Result<ResponseMessage> {
-    match request.header.request_api_key {
-        api_key if api_key == API_VERSIONS_API_INFO.api_key => {
-            let request_api_version = request.header.request_api_version;
-            let (error_code, mut api_keys) = if request_api_version
-                >= API_VERSIONS_API_INFO.min_version
-                && request.header.request_api_version <= API_VERSIONS_API_INFO.max_version
-            {
-                (0, SUPPORT_APIS.values().cloned().collect())
-            } else {
-                (UNSUPPORTED_VERSION_ERROR, vec![])
-            };
-            api_keys.sort();
+pub fn execute_api_verions(request: &RequestMessage) -> ResponseMessage {
+    let RequestHeaderV2 {
+        request_api_version,
+        request_api_key: _,
+        correlation_id,
+        client_id: _,
+        tag_buffer: _,
+    } = request.header;
 
-            Ok(ResponseMessage::new(
-                request.header.correlation_id,
-                ResponseBody::ApiVersionsV4(ApiVersionsV4ResponseBody::new(
-                    error_code,
-                    api_keys,
-                    0,
-                    TagBuffer::new(None),
-                )),
-            ))
-        }
-        api_key => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("api_key {} has not been implemented", api_key),
+    let (error_code, mut api_keys) = if request_api_version >= API_VERSIONS_API_INFO.min_version
+        && request_api_version <= API_VERSIONS_API_INFO.max_version
+    {
+        (0, SUPPORT_APIS.values().cloned().collect())
+    } else {
+        (UNSUPPORTED_VERSION_ERROR, vec![])
+    };
+    api_keys.sort();
+
+    ResponseMessage::new(
+        correlation_id,
+        ResponseBody::ApiVersionsV4(ApiVersionsV4ResponseBody::new(
+            error_code,
+            api_keys,
+            0,
+            TagBuffer::new(None),
         )),
+    )
+}
+
+pub async fn execute_request(request: &RequestMessage) -> io::Result<ResponseMessage> {
+    let request_api_key = request.header.request_api_key;
+    if request_api_key == API_VERSIONS_API_INFO.api_key {
+        Ok(execute_api_verions(request))
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "request_api_key {} has not been implemented",
+                request_api_key
+            ),
+        ))
     }
 }

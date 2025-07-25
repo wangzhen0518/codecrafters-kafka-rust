@@ -1,11 +1,11 @@
 use crate::{decode::Decode, encode::Encode};
 
-#[derive(Debug, Encode, Decode, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct TagBuffer {
     fields: Option<Vec<TagSection>>,
 }
 
-#[derive(Debug, Encode, Decode, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct TagSection {
     tag: u8,
     data: Vec<u8>,
