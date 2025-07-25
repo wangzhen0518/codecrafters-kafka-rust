@@ -11,7 +11,7 @@ use crate::{
 pub struct RequestMessage {
     #[allow(dead_code)]
     pub message_size: u32,
-    pub header: RequestHeaderV2,
+    pub header: RequestHeader,
     pub body: RequestBody,
 }
 
@@ -36,8 +36,8 @@ impl RequestMessage {
 impl Decode for RequestMessage {
     fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self> {
         let message_size = u32::decode(buffer)?;
-        let header = RequestHeaderV2::decode(buffer)?;
-        let body = if header.request_api_key == API_VERSIONS_API_INFO.api_key {
+        let header = RequestHeader::RequestHeaderV2(RequestHeaderV2::decode(buffer)?);
+        let body = if header.request_api_key() == API_VERSIONS_API_INFO.api_key {
             RequestBody::ApiVersionsV4(ApiVersionsV4ReqeustBody::decode(buffer)?)
         } else {
             unimplemented!()
@@ -47,6 +47,61 @@ impl Decode for RequestMessage {
             header,
             body,
         })
+    }
+}
+
+#[derive(Debug)]
+pub enum RequestHeader {
+    RequestHeaderV2(RequestHeaderV2),
+}
+
+impl RequestHeader {
+    pub fn new_v2(
+        request_api_key: i16,
+        request_api_version: i16,
+        correlation_id: i32,
+        client_id: HeaderClientId,
+        tag_buffer: TagBuffer,
+    ) -> Self {
+        RequestHeader::RequestHeaderV2(RequestHeaderV2 {
+            request_api_key,
+            request_api_version,
+            correlation_id,
+            client_id,
+            tag_buffer,
+        })
+    }
+
+    pub fn request_api_key(&self) -> i16 {
+        match self {
+            RequestHeader::RequestHeaderV2(header) => header.request_api_key,
+        }
+    }
+
+    pub fn request_api_version(&self) -> i16 {
+        match self {
+            RequestHeader::RequestHeaderV2(header) => header.request_api_version,
+        }
+    }
+
+    pub fn correlation_id(&self) -> i32 {
+        match self {
+            RequestHeader::RequestHeaderV2(header) => header.correlation_id,
+        }
+    }
+
+    pub fn client_id(&self) -> &str {
+        match self {
+            RequestHeader::RequestHeaderV2(header) => &header.client_id.id,
+        }
+    }
+}
+
+impl Encode for RequestHeader {
+    fn encode(&self) -> Vec<u8> {
+        match self {
+            RequestHeader::RequestHeaderV2(header) => header.encode(),
+        }
     }
 }
 
@@ -62,6 +117,12 @@ pub struct RequestHeaderV2 {
 #[derive(Debug, Encode)]
 pub struct HeaderClientId {
     pub id: String,
+}
+
+impl HeaderClientId {
+    pub fn new(id: String) -> Self {
+        Self { id }
+    }
 }
 
 impl Decode for HeaderClientId {
@@ -97,15 +158,13 @@ pub struct ApiVersionsV4ReqeustBody {
 pub fn request_api_versions(request_api_version: i16) -> RequestMessage {
     RequestMessage {
         message_size: 0,
-        header: RequestHeaderV2 {
-            request_api_key: API_VERSIONS_API_INFO.api_key,
+        header: RequestHeader::new_v2(
+            API_VERSIONS_API_INFO.api_key,
             request_api_version,
-            correlation_id: 0,
-            client_id: HeaderClientId {
-                id: "myclient".to_string(),
-            },
-            tag_buffer: TagBuffer::new(None),
-        },
+            0,
+            HeaderClientId::new("myclient".to_string()),
+            TagBuffer::new(None),
+        ),
         body: RequestBody::ApiVersionsV4(ApiVersionsV4ReqeustBody {
             client_id: "myclient".to_string(),
             client_software_version: "0.1".to_string(),

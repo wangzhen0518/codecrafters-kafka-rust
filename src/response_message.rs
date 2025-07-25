@@ -3,22 +3,22 @@ use std::{collections::HashMap, io::Cursor};
 
 use lazy_static::lazy_static;
 
-use crate::decode::DecodeResult;
-use crate::request_message::RequestHeaderV2;
 use crate::{
-    common_struct::TagBuffer, decode::Decode, encode::Encode, request_message::RequestMessage,
+    common_struct::TagBuffer,
+    decode::{Decode, DecodeResult},
+    encode::Encode,
+    request_message::RequestMessage,
 };
 
 #[derive(Debug, Encode)]
 pub struct ResponseMessage {
     message_size: u32,
-    header: ResponseHeaderV0,
+    header: ResponseHeader,
     body: ResponseBody,
 }
 
 impl ResponseMessage {
-    pub fn new(correlation_id: i32, body: ResponseBody) -> Self {
-        let header = ResponseHeaderV0::new(correlation_id);
+    pub fn new(header: ResponseHeader, body: ResponseBody) -> Self {
         ResponseMessage {
             message_size: 0,
             header,
@@ -44,7 +44,7 @@ impl ResponseMessage {
 
     pub fn decode(buffer: &mut Cursor<&[u8]>, request_api_key: i16) -> DecodeResult<Self> {
         let message_size = u32::decode(buffer)?;
-        let header = ResponseHeaderV0::decode(buffer)?;
+        let header = ResponseHeader::ResponseHeaderV1(ResponseHeaderV1::decode(buffer)?);
         let body = if request_api_key == API_VERSIONS_API_INFO.api_key {
             ResponseBody::ApiVersionsV4(ApiVersionsV4ResponseBody::decode(buffer)?)
         } else {
@@ -58,6 +58,34 @@ impl ResponseMessage {
     }
 }
 
+#[derive(Debug)]
+pub enum ResponseHeader {
+    ResponseHeaderV0(ResponseHeaderV0),
+    ResponseHeaderV1(ResponseHeaderV1),
+}
+
+impl ResponseHeader {
+    pub fn new_v0(correlation_id: i32) -> Self {
+        ResponseHeader::ResponseHeaderV0(ResponseHeaderV0 { correlation_id })
+    }
+
+    pub fn new_v1(correlation_id: i32) -> Self {
+        ResponseHeader::ResponseHeaderV1(ResponseHeaderV1 {
+            correlation_id,
+            tag_buffer: TagBuffer::new(None),
+        })
+    }
+}
+
+impl Encode for ResponseHeader {
+    fn encode(&self) -> Vec<u8> {
+        match self {
+            ResponseHeader::ResponseHeaderV0(header) => header.encode(),
+            ResponseHeader::ResponseHeaderV1(header) => header.encode(),
+        }
+    }
+}
+
 #[derive(Debug, Encode, Decode)]
 pub struct ResponseHeaderV0 {
     correlation_id: i32,
@@ -66,6 +94,21 @@ pub struct ResponseHeaderV0 {
 impl ResponseHeaderV0 {
     pub fn new(correlation_id: i32) -> Self {
         ResponseHeaderV0 { correlation_id }
+    }
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct ResponseHeaderV1 {
+    correlation_id: i32,
+    tag_buffer: TagBuffer,
+}
+
+impl ResponseHeaderV1 {
+    pub fn new(correlation_id: i32, tag_buffer: TagBuffer) -> Self {
+        ResponseHeaderV1 {
+            correlation_id,
+            tag_buffer,
+        }
     }
 }
 
@@ -161,14 +204,8 @@ lazy_static! {
 }
 
 pub fn execute_api_verions(request: &RequestMessage) -> ResponseMessage {
-    let RequestHeaderV2 {
-        request_api_version,
-        request_api_key: _,
-        correlation_id,
-        client_id: _,
-        tag_buffer: _,
-    } = request.header;
-
+    let request_api_version = request.header.request_api_version();
+    let correlation_id = request.header.correlation_id();
     let (error_code, mut api_keys) = if request_api_version >= API_VERSIONS_API_INFO.min_version
         && request_api_version <= API_VERSIONS_API_INFO.max_version
     {
@@ -179,7 +216,7 @@ pub fn execute_api_verions(request: &RequestMessage) -> ResponseMessage {
     api_keys.sort();
 
     ResponseMessage::new(
-        correlation_id,
+        ResponseHeader::new_v1(correlation_id),
         ResponseBody::ApiVersionsV4(ApiVersionsV4ResponseBody::new(
             error_code,
             api_keys,
@@ -190,7 +227,7 @@ pub fn execute_api_verions(request: &RequestMessage) -> ResponseMessage {
 }
 
 pub async fn execute_request(request: &RequestMessage) -> io::Result<ResponseMessage> {
-    let request_api_key = request.header.request_api_key;
+    let request_api_key = request.header.request_api_key();
     if request_api_key == API_VERSIONS_API_INFO.api_key {
         Ok(execute_api_verions(request))
     } else {
