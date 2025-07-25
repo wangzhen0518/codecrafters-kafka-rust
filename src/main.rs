@@ -1,32 +1,38 @@
 #![allow(dead_code)]
 
-use tokio::{
-    io::AsyncWriteExt,
-    net::{TcpListener, TcpStream},
-};
+use tokio::net::{TcpListener, TcpStream};
+
+use crate::connection::Connection;
 
 mod common_struct;
+mod connection;
 mod decode;
 mod encode;
 mod request_message;
 mod response_message;
 mod utils;
 
-async fn process(mut socket: TcpStream) {
-    while let Ok(request) = request_message::parse_input(&mut socket).await {
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
+pub type Result<T> = std::result::Result<T, Error>;
+
+async fn process(socket: TcpStream) {
+    let mut connection = Connection::new(socket);
+    while let Some(request) = connection
+        .read_request()
+        .await
+        .expect("Failed to read content from socket")
+    {
         let mut response = response_message::execute_request(&request)
             .await
             .expect("Failed to execute request");
 
-        let binary_code = response.as_bytes();
-
-        socket
-            .write_all(&binary_code)
+        connection
+            .write_response(&mut response)
             .await
             .expect("Failed to write response");
 
         tracing::debug!("Receive Request:\n{:?}", request);
-        tracing::debug!("Response:\n{:?}\n{:02x?}", response, binary_code);
+        tracing::debug!("Response:\n{:?}", response);
     }
 }
 
