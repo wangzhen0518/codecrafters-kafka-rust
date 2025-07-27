@@ -13,7 +13,7 @@ use crate::{
     response_message::{ResponseBody, ResponseHeader, ResponseMessage},
 };
 
-pub const UNKNOWN_TOPIC_ERROR: u16 = 3; //TODO 考虑怎么把错误码和数据结构结合到一起
+pub const UNKNOWN_TOPIC_ERROR: i16 = 3; //TODO 考虑怎么把错误码和数据结构结合到一起
 
 lazy_static! {
     pub static ref DESCRIBE_TOPIC_PARTITIONS_API_INFO: ApiKey =
@@ -32,7 +32,7 @@ pub struct TopicInfo {
 #[derive(Debug, Decode, Encode)]
 pub struct DescribeTopicPartitionsV0RequestBody {
     topics: Vec<TopicRequest>,
-    response_partition_limit: u32,
+    response_partition_limit: i32,
     cursor: Option<TopicCursor>,
     tag_buffer: TagBuffer,
 }
@@ -46,7 +46,7 @@ pub struct TopicRequest {
 #[derive(Debug, Decode, Encode)]
 pub struct TopicCursor {
     topic_name: String,
-    partition_index: u32,
+    partition_index: i32,
     tag_buffer: TagBuffer,
 }
 
@@ -75,7 +75,7 @@ impl Decode for Option<TopicCursor> {
 
 #[derive(Debug, Encode, Decode)]
 pub struct DescribeTopicPartitionsV0ResponseBody {
-    throttle_time: u32,
+    throttle_time: i32,
     topic_array: Vec<TopicResponse>,
     next_curor: Option<TopicCursor>,
     tag_buffer: TagBuffer,
@@ -83,7 +83,7 @@ pub struct DescribeTopicPartitionsV0ResponseBody {
 
 #[derive(Debug, Encode, Decode)]
 pub struct TopicResponse {
-    error_code: u16,
+    error_code: i16,
     name: String,
     id: Uuid,
     is_internal: bool,
@@ -167,8 +167,7 @@ pub fn execute_describe_topic_partitions(
                 id: Uuid::nil(),
                 is_internal: false,
                 partitions_array: vec![],
-                topic_authorized_operations:
-                    TopicAuthorizedOperations::default(),
+                topic_authorized_operations: TopicAuthorizedOperations::default(),
                 tag_buffer: TagBuffer::new(None),
             }
         };
