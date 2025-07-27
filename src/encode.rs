@@ -1,3 +1,5 @@
+use uuid::Uuid;
+
 pub use kafka_serde_derive::Encode;
 
 pub trait Encode {
@@ -17,7 +19,13 @@ macro_rules! impl_encode_for_integers {
     };
 }
 // 为所有标准整数类型实现
-impl_encode_for_integers!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
+impl_encode_for_integers!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, isize, i128);
+
+impl Encode for bool {
+    fn encode(&self) -> Vec<u8> {
+        u8::from(*self).encode()
+    }
+}
 
 impl<T: Encode> Encode for &[T] {
     fn encode(&self) -> Vec<u8> {
@@ -74,5 +82,11 @@ impl Encode for Option<String> {
             Some(s) => s.encode(),
             None => vec![0_u8],
         }
+    }
+}
+
+impl Encode for Uuid {
+    fn encode(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
     }
 }

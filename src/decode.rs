@@ -1,12 +1,12 @@
 use std::{
     fmt::Display,
     io::{Cursor, Read, Seek},
-    num::TryFromIntError,
-    string::FromUtf8Error,
+    num, str, string,
 };
 
 use bytes::Buf;
 use paste::paste;
+use uuid::Uuid;
 
 pub use kafka_serde_derive::Decode;
 
@@ -33,7 +33,22 @@ macro_rules! impl_decode_for_integers {
     };
 }
 // 为所有标准整数类型实现
-impl_decode_for_integers!(u8, u16, u32, u64, i8, i16, i32, i64);
+impl_decode_for_integers!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128);
+
+impl Decode for bool {
+    fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self>
+    where
+        Self: Sized,
+    {
+        match u8::decode(buffer)? {
+            0 => Ok(false),
+            1 => Ok(true),
+            x => Err(DecodeError::Other(
+                format!("Found {} when decoding bool", x).into(),
+            )),
+        }
+    }
+}
 
 impl<T: Decode> Decode for Vec<T> {
     fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self> {
@@ -124,7 +139,14 @@ macro_rules! impl_decode_other_error_from {
     };
 }
 
-impl_decode_other_error_from!(String, &str, FromUtf8Error, TryFromIntError);
+impl_decode_other_error_from!(
+    &str,
+    str::Utf8Error,
+    String,
+    string::FromUtf8Error,
+    num::TryFromIntError,
+    uuid::Error
+);
 
 macro_rules! impl_decode_imcomplete_error_from {
     ($($type:ty),*) => {
@@ -141,3 +163,16 @@ macro_rules! impl_decode_imcomplete_error_from {
 impl_decode_imcomplete_error_from!(std::io::Error);
 
 pub type DecodeResult<T> = Result<T, DecodeError>;
+
+impl Decode for Uuid {
+    fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self>
+    where
+        Self: Sized,
+    {
+        let mut uuid_buffer = [0_u8; 16];
+        buffer.read_exact(&mut uuid_buffer)?;
+        let uuid_str = str::from_utf8(&uuid_buffer)?;
+        let uuid = Uuid::parse_str(uuid_str)?;
+        Ok(uuid)
+    }
+}

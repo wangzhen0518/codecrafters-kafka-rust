@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 use crate::{
     common_struct::TagBuffer,
     decode::Decode,
+    describe_topic_partitions::DESCRIBE_TOPIC_PARTITIONS_API_INFO,
     encode::Encode,
     request_message::RequestHeaderV2,
     response_message::{ResponseBody, ResponseHeader, ResponseMessage},
@@ -16,6 +17,10 @@ lazy_static! {
     pub static ref API_VERSIONS_API_INFO: ApiKey = ApiKey::new(18, 0, 4, TagBuffer::new(None));
     pub static ref SUPPORT_APIS: HashMap<i16, ApiKey> = HashMap::from([
         (API_VERSIONS_API_INFO.api_key, API_VERSIONS_API_INFO.clone()),
+        (
+            DESCRIBE_TOPIC_PARTITIONS_API_INFO.api_key,
+            DESCRIBE_TOPIC_PARTITIONS_API_INFO.clone(),
+        ),
     ]);
 }
 

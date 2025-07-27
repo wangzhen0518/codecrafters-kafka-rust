@@ -8,6 +8,7 @@ mod api_versions;
 mod common_struct;
 mod connection;
 mod decode;
+mod describe_topic_partitions;
 mod encode;
 mod request_message;
 mod response_message;

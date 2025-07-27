@@ -4,6 +4,9 @@ use crate::{
     api_versions::{ApiVersionsV4ReqeustBody, API_VERSIONS_API_INFO},
     common_struct::TagBuffer,
     decode::{Decode, DecodeResult},
+    describe_topic_partitions::{
+        DescribeTopicPartitionsV0RequestBody, DESCRIBE_TOPIC_PARTITIONS_API_INFO,
+    },
     encode::Encode,
 };
 
@@ -39,6 +42,10 @@ impl Decode for RequestMessage {
         let header = RequestHeader::RequestHeaderV2(RequestHeaderV2::decode(buffer)?);
         let body = if header.request_api_key() == API_VERSIONS_API_INFO.api_key {
             RequestBody::ApiVersionsV4(ApiVersionsV4ReqeustBody::decode(buffer)?)
+        } else if header.request_api_key() == DESCRIBE_TOPIC_PARTITIONS_API_INFO.api_key {
+            RequestBody::DescribeTopicPartitionsV0(DescribeTopicPartitionsV0RequestBody::decode(
+                buffer,
+            )?)
         } else {
             unimplemented!()
         };
@@ -138,12 +145,14 @@ impl Decode for HeaderClientId {
 #[derive(Debug)]
 pub enum RequestBody {
     ApiVersionsV4(ApiVersionsV4ReqeustBody),
+    DescribeTopicPartitionsV0(DescribeTopicPartitionsV0RequestBody),
 }
 
 impl Encode for RequestBody {
     fn encode(&self) -> Vec<u8> {
         match self {
             RequestBody::ApiVersionsV4(body) => body.encode(),
+            RequestBody::DescribeTopicPartitionsV0(body) => body.encode(),
         }
     }
 }
