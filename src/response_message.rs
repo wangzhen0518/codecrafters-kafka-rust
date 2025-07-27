@@ -1,13 +1,11 @@
-use std::io;
-use std::{collections::HashMap, io::Cursor};
-
-use lazy_static::lazy_static;
+use std::io::{self, Cursor};
 
 use crate::{
+    api_versions::{execute_api_verions, ApiVersionsV4ResponseBody, API_VERSIONS_API_INFO},
     common_struct::TagBuffer,
     decode::{Decode, DecodeResult},
     encode::Encode,
-    request_message::RequestMessage,
+    request_message::{RequestBody, RequestHeader, RequestMessage},
 };
 
 #[derive(Debug, Encode)]
@@ -125,111 +123,35 @@ impl Encode for ResponseBody {
     }
 }
 
-#[derive(Debug, Encode, Decode)]
-pub struct ApiVersionsV4ResponseBody {
-    error_code: i16,
-    api_keys: Vec<ApiKey>,
-    throttle_time_ms: i32,
-    tag_buffer: TagBuffer,
-}
-
-impl ApiVersionsV4ResponseBody {
-    pub fn new(
-        error_code: i16,
-        api_keys: Vec<ApiKey>,
-        throttle_time_ms: i32,
-        tag_buffer: TagBuffer,
-    ) -> Self {
-        Self {
-            error_code,
-            api_keys,
-            throttle_time_ms,
-            tag_buffer,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Encode, Decode)]
-pub struct ApiKey {
-    pub api_key: i16,
-    pub min_version: i16,
-    pub max_version: i16,
-    pub tag_buffer: TagBuffer,
-}
-
-impl ApiKey {
-    pub fn new(api_key: i16, min_version: i16, max_version: i16, tag_buffer: TagBuffer) -> Self {
-        Self {
-            api_key,
-            min_version,
-            max_version,
-            tag_buffer,
-        }
-    }
-}
-
-impl PartialEq for ApiKey {
-    fn eq(&self, other: &Self) -> bool {
-        self.api_key == other.api_key
-    }
-}
-
-impl PartialOrd for ApiKey {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.api_key.cmp(&other.api_key))
-    }
-}
-
-impl Eq for ApiKey {}
-
-impl Ord for ApiKey {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.api_key.cmp(&other.api_key)
-    }
-}
-
-const UNSUPPORTED_VERSION_ERROR: i16 = 35;
-
-lazy_static! {
-    pub static ref API_VERSIONS_API_INFO: ApiKey = ApiKey::new(18, 0, 4, TagBuffer::new(None));
-    pub static ref DESCRIBE_TOPIC_PARTITIONS_API_INFO: ApiKey =
-        ApiKey::new(75, 0, 0, TagBuffer::new(None));
-    pub static ref SUPPORT_APIS: HashMap<i16, ApiKey> = HashMap::from([
-        (API_VERSIONS_API_INFO.api_key, API_VERSIONS_API_INFO.clone()),
-        (
-            DESCRIBE_TOPIC_PARTITIONS_API_INFO.api_key,
-            DESCRIBE_TOPIC_PARTITIONS_API_INFO.clone(),
-        ),
-    ]);
-}
-
-pub fn execute_api_verions(request: &RequestMessage) -> ResponseMessage {
-    let request_api_version = request.header.request_api_version();
-    let correlation_id = request.header.correlation_id();
-    let (error_code, mut api_keys) = if request_api_version >= API_VERSIONS_API_INFO.min_version
-        && request_api_version <= API_VERSIONS_API_INFO.max_version
-    {
-        (0, SUPPORT_APIS.values().cloned().collect())
-    } else {
-        (UNSUPPORTED_VERSION_ERROR, vec![])
-    };
-    api_keys.sort();
-
-    ResponseMessage::new(
-        ResponseHeader::new_v1(correlation_id),
-        ResponseBody::ApiVersionsV4(ApiVersionsV4ResponseBody::new(
-            error_code,
-            api_keys,
-            0,
-            TagBuffer::new(None),
-        )),
-    )
-}
-
 pub async fn execute_request(request: &RequestMessage) -> io::Result<ResponseMessage> {
     let request_api_key = request.header.request_api_key();
+    let create_err = |header, body| {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "Unsupport header or body version:
+Header: {:?}
+Body: {:?}
+Support Request Header v2, Describe Topic Partitions V0.",
+                header, body
+            ),
+        ))
+    };
     if request_api_key == API_VERSIONS_API_INFO.api_key {
-        Ok(execute_api_verions(request))
+        match (&request.header, &request.body) {
+            (RequestHeader::RequestHeaderV2(header), RequestBody::ApiVersionsV4(body)) => {
+                Ok(execute_api_verions(header, body))
+            }
+            (header, body) => create_err(header, body),
+        }
+    } else if request_api_key == DESCRIBE_TOPIC_PARTITIONS_API_INFO.api_key {
+        match (&request.header, &request.body) {
+            (
+                RequestHeader::RequestHeaderV2(header),
+                RequestBody::DescribeTopicPartitionsV0(body),
+            ) => Ok(execute_describe_topic_partitions(header, body)),
+            (header, body) => create_err(header, body),
+        }
     } else {
         Err(io::Error::new(
             io::ErrorKind::InvalidInput,

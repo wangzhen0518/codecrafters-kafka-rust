@@ -28,4 +28,7 @@ fn main() {
     let b = MyStruct { a: Some([0; 1024]) };
     println!("Size of a: {}", mem::size_of_val(&a));
     println!("Size of b: {}", mem::size_of_val(&b));
+
+    let x = bincode::encode_to_vec(true, config).unwrap();
+    println!("{:?}", x);
 }

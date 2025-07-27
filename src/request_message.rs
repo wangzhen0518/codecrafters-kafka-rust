@@ -1,10 +1,10 @@
 use std::io::{self, Cursor};
 
 use crate::{
+    api_versions::{ApiVersionsV4ReqeustBody, API_VERSIONS_API_INFO},
     common_struct::TagBuffer,
     decode::{Decode, DecodeResult},
     encode::Encode,
-    response_message::API_VERSIONS_API_INFO,
 };
 
 #[derive(Debug, Encode)]
@@ -146,13 +146,6 @@ impl Encode for RequestBody {
             RequestBody::ApiVersionsV4(body) => body.encode(),
         }
     }
-}
-
-#[derive(Debug, Decode, Encode)]
-pub struct ApiVersionsV4ReqeustBody {
-    pub client_id: String,
-    pub client_software_version: String,
-    pub tag_buffer: TagBuffer,
 }
 
 pub fn request_api_versions(request_api_version: i16) -> RequestMessage {

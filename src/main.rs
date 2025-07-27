@@ -4,6 +4,7 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::connection::Connection;
 
+mod api_versions;
 mod common_struct;
 mod connection;
 mod decode;
