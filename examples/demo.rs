@@ -15,8 +15,10 @@ fn main() {
     let config = bincode::config::standard()
         .with_big_endian()
         .with_fixed_int_encoding();
+
     let x = bincode::encode_to_vec(4_u32, config).unwrap();
     println!("{:?}", x);
+
     println!(
         "Size of ResponseMessage: {}",
         mem::size_of::<ResponseMessage>()
@@ -30,5 +32,11 @@ fn main() {
     println!("Size of b: {}", mem::size_of_val(&b));
 
     let x = bincode::encode_to_vec(true, config).unwrap();
+    println!("{:?}", x);
+
+    let x = bincode::encode_to_vec(None::<u8>, config).unwrap();
+    println!("{:?}", x);
+
+    let x = <Option<u8> as Default>::default();
     println!("{:?}", x);
 }

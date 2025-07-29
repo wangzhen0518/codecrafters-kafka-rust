@@ -1,4 +1,8 @@
-use std::{collections::HashMap, io::Cursor};
+use std::{
+    collections::HashMap,
+    io::Cursor,
+    sync::{Arc, Mutex},
+};
 
 use bitflags::bitflags;
 use lazy_static::lazy_static;
@@ -6,9 +10,10 @@ use uuid::Uuid;
 
 use crate::{
     api_versions::ApiKey,
-    common_struct::TagBuffer,
+    common_struct::{CompactArray, CompactString, TagBuffer},
     decode::{Decode, DecodeError, DecodeResult},
     encode::Encode,
+    metadata_log::{MetadataLog, RecordValue},
     request_message::RequestHeaderV2,
     response_message::{ResponseBody, ResponseHeader, ResponseMessage},
 };
@@ -22,74 +27,117 @@ lazy_static! {
 }
 
 pub struct TopicInfo {
-    name: String,
-    id: Uuid,
-    is_internal: bool,
-    partitions_array: Vec<u8>, //TODO 确认内部是什么
-    topic_authorized_operations: TopicAuthorizedOperations,
+    pub name: CompactString,
+    pub id: Uuid,
+    pub is_internal: bool,
+    pub partitions_array: CompactArray<TopicPartition>,
+    pub topic_authorized_operations: TopicAuthorizedOperations,
 }
 
 #[derive(Debug, Decode, Encode)]
 pub struct DescribeTopicPartitionsV0RequestBody {
-    topics: Vec<TopicRequest>,
+    topics: CompactArray<TopicRequest>,
     response_partition_limit: i32,
-    cursor: Option<TopicCursor>,
+    cursor: OptionTopicCursor,
     tag_buffer: TagBuffer,
 }
 
 #[derive(Debug, Decode, Encode)]
 pub struct TopicRequest {
-    name: String,
+    name: CompactString,
     tag_buffer: TagBuffer,
 }
 
 #[derive(Debug, Decode, Encode)]
 pub struct TopicCursor {
-    topic_name: String,
+    topic_name: CompactString,
     partition_index: i32,
     tag_buffer: TagBuffer,
 }
 
-impl Encode for Option<TopicCursor> {
+#[derive(Debug)]
+pub struct OptionTopicCursor {
+    inner: Option<TopicCursor>,
+}
+
+impl OptionTopicCursor {
+    pub fn new(inner: Option<TopicCursor>) -> Self {
+        Self { inner }
+    }
+}
+
+impl Default for OptionTopicCursor {
+    fn default() -> Self {
+        OptionTopicCursor::new(None)
+    }
+}
+
+impl Encode for OptionTopicCursor {
     fn encode(&self) -> Vec<u8> {
-        match self {
+        match &self.inner {
             Some(cursor) => cursor.encode(),
             None => vec![0xff],
         }
     }
 }
 
-impl Decode for Option<TopicCursor> {
+impl Decode for OptionTopicCursor {
     fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self>
     where
         Self: Sized,
     {
         let cursor = u8::decode(buffer)?;
-        if cursor == 0xff {
-            Ok(None)
+        let inner = if cursor == 0xff {
+            None
         } else {
-            Ok(Some(TopicCursor::decode(buffer)?))
-        }
+            Some(TopicCursor::decode(buffer)?)
+        };
+        Ok(OptionTopicCursor::new(inner))
     }
 }
 
 #[derive(Debug, Encode, Decode)]
 pub struct DescribeTopicPartitionsV0ResponseBody {
     throttle_time: i32,
-    topic_array: Vec<TopicResponse>,
-    next_curor: Option<TopicCursor>,
+    topic_array: CompactArray<TopicResponse>,
+    next_curor: OptionTopicCursor,
     tag_buffer: TagBuffer,
 }
 
 #[derive(Debug, Encode, Decode)]
 pub struct TopicResponse {
     error_code: i16,
-    name: String,
+    name: CompactString,
     id: Uuid,
     is_internal: bool,
-    partitions_array: Vec<u8>, //TODO 确认内部是什么
+    partitions_array: CompactArray<TopicPartition>,
     topic_authorized_operations: TopicAuthorizedOperations,
     tag_buffer: TagBuffer,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct TopicPartition {
+    error_code: i16,
+    index: i32,
+    leader_id: i32,
+    leader_epoch: i32,
+    repica_nodes: CompactArray<RepicaNode>,
+    isr_nodes: CompactArray<RepicaNode>,
+    eligible_leader_replicas: CompactArray<RepicaNode>,
+    last_known_elr: CompactArray<RepicaNode>,
+    offline_replicas: CompactArray<RepicaNode>,
+    tag_buffer: TagBuffer,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct RepicaNode {
+    id: i32,
+}
+
+impl RepicaNode {
+    pub fn new(id: i32) -> Self {
+        Self { id }
+    }
 }
 
 bitflags! {
@@ -141,6 +189,52 @@ impl Decode for TopicAuthorizedOperations {
     }
 }
 
+pub fn init_topic_partitions(metadata_log: &MetadataLog) {
+    for record_batch in metadata_log.record_batches() {
+        let mut topic_info = TopicInfo {
+            name: CompactString::default(),
+            id: Uuid::nil(),
+            is_internal: false,
+            partitions_array: CompactArray::empty(),
+            topic_authorized_operations: TopicAuthorizedOperations::default(),
+        };
+        if let Some(records) = record_batch.records().inner() {
+            for record in records {
+                match record.value() {
+                    RecordValue::Topic(topic) => {
+                        topic_info.name = topic.name.clone();
+                        topic_info.id = topic.id;
+                    }
+                    RecordValue::Partition(partition) => {
+                        let topic_partition = TopicPartition {
+                            error_code: 0,                //TODO 包含在哪里
+                            index: partition.parition_id, //TODO 是否是同一个属性
+                            leader_id: partition.leader_id,
+                            leader_epoch: partition.leader_epoch,
+                            repica_nodes: partition.replica_nodes.clone(),
+                            isr_nodes: partition.isr_nodes.clone(),
+                            eligible_leader_replicas: CompactArray::empty(), //TODO 包含在哪里
+                            last_known_elr: CompactArray::empty(),           //TODO 包含在哪里
+                            offline_replicas: CompactArray::empty(),         //TODO 包含在哪里
+                            tag_buffer: partition.tag_buffers.clone(),
+                        };
+                        topic_info
+                            .partitions_array
+                            .as_mut()
+                            .unwrap()
+                            .push(topic_partition);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        TOPIC_PARTITIONS
+            .lock()
+            .expect("Failed to get TOPIC_PARITIONS's lock")
+            .insert(topic_info.name.clone(), topic_info);
+    }
+}
+
 pub fn execute_describe_topic_partitions(
     header: &RequestHeaderV2,
     body: &DescribeTopicPartitionsV0RequestBody,
@@ -149,8 +243,12 @@ pub fn execute_describe_topic_partitions(
     let correlation_id = header.correlation_id;
 
     let mut topic_array = vec![];
-    for topic_request in body.topics.iter() {
-        let topic_resp = if let Some(topic_info) = TOPIC_PARTITIONS.get(&topic_request.name) {
+    for topic_request in body.topics.as_ref().unwrap().iter() {
+        let topic_resp = if let Some(topic_info) = TOPIC_PARTITIONS
+            .lock()
+            .expect("Failed to get TOPIC_PARTITIONS")
+            .get(&topic_request.name)
+        {
             TopicResponse {
                 error_code: 0,
                 name: topic_info.name.clone(),
@@ -158,7 +256,7 @@ pub fn execute_describe_topic_partitions(
                 is_internal: topic_info.is_internal,
                 partitions_array: topic_info.partitions_array.clone(),
                 topic_authorized_operations: topic_info.topic_authorized_operations,
-                tag_buffer: TagBuffer::new(None),
+                tag_buffer: TagBuffer::default(),
             }
         } else {
             TopicResponse {
@@ -166,9 +264,9 @@ pub fn execute_describe_topic_partitions(
                 name: topic_request.name.clone(),
                 id: Uuid::nil(),
                 is_internal: false,
-                partitions_array: vec![],
+                partitions_array: CompactArray::empty(),
                 topic_authorized_operations: TopicAuthorizedOperations::default(),
-                tag_buffer: TagBuffer::new(None),
+                tag_buffer: TagBuffer::default(),
             }
         };
         topic_array.push(topic_resp);
@@ -178,9 +276,9 @@ pub fn execute_describe_topic_partitions(
         ResponseHeader::new_v1(correlation_id),
         ResponseBody::DescribeTopicPartitionsV0(DescribeTopicPartitionsV0ResponseBody {
             throttle_time: 0,
-            topic_array,
-            next_curor: None,
-            tag_buffer: TagBuffer::new(None),
+            topic_array: CompactArray::new(Some(topic_array)),
+            next_curor: OptionTopicCursor::default(),
+            tag_buffer: TagBuffer::default(),
         }),
     )
 }

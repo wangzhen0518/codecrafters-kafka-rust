@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use lazy_static::lazy_static;
 
 use crate::{
-    common_struct::TagBuffer,
+    common_struct::{CompactArray, CompactString, TagBuffer},
     decode::Decode,
     describe_topic_partitions::DESCRIBE_TOPIC_PARTITIONS_API_INFO,
     encode::Encode,
@@ -14,7 +14,7 @@ use crate::{
 pub const UNSUPPORTED_VERSION_ERROR: i16 = 35;
 
 lazy_static! {
-    pub static ref API_VERSIONS_API_INFO: ApiKey = ApiKey::new(18, 0, 4, TagBuffer::new(None));
+    pub static ref API_VERSIONS_API_INFO: ApiKey = ApiKey::new(18, 0, 4, TagBuffer::default());
     pub static ref SUPPORT_APIS: HashMap<i16, ApiKey> = HashMap::from([
         (API_VERSIONS_API_INFO.api_key, API_VERSIONS_API_INFO.clone()),
         (
@@ -26,15 +26,15 @@ lazy_static! {
 
 #[derive(Debug, Decode, Encode)]
 pub struct ApiVersionsV4ReqeustBody {
-    pub client_id: String,
-    pub client_software_version: String,
+    pub client_id: CompactString,
+    pub client_software_version: CompactString,
     pub tag_buffer: TagBuffer,
 }
 
 #[derive(Debug, Encode, Decode)]
 pub struct ApiVersionsV4ResponseBody {
     error_code: i16,
-    api_keys: Vec<ApiKey>,
+    api_keys: CompactArray<ApiKey>,
     throttle_time_ms: i32,
     tag_buffer: TagBuffer,
 }
@@ -42,7 +42,7 @@ pub struct ApiVersionsV4ResponseBody {
 impl ApiVersionsV4ResponseBody {
     pub fn new(
         error_code: i16,
-        api_keys: Vec<ApiKey>,
+        api_keys: CompactArray<ApiKey>,
         throttle_time_ms: i32,
         tag_buffer: TagBuffer,
     ) -> Self {
@@ -113,9 +113,9 @@ pub fn execute_api_verions(
         ResponseHeader::new_v0(correlation_id),
         ResponseBody::ApiVersionsV4(ApiVersionsV4ResponseBody::new(
             error_code,
-            api_keys,
+            CompactArray::new(Some(api_keys)),
             0,
-            TagBuffer::new(None),
+            TagBuffer::default(),
         )),
     )
 }

@@ -78,7 +78,7 @@ impl ResponseHeader {
     pub fn new_v1(correlation_id: i32) -> Self {
         ResponseHeader::ResponseHeaderV1(ResponseHeaderV1 {
             correlation_id,
-            tag_buffer: TagBuffer::new(None),
+            tag_buffer: TagBuffer::default(),
         })
     }
 }

@@ -1,8 +1,8 @@
-use std::io::{self, Cursor};
+use std::io::Cursor;
 
 use crate::{
     api_versions::{ApiVersionsV4ReqeustBody, API_VERSIONS_API_INFO},
-    common_struct::TagBuffer,
+    common_struct::{CompactString, KafkaString, TagBuffer},
     decode::{Decode, DecodeResult},
     describe_topic_partitions::{
         DescribeTopicPartitionsV0RequestBody, DESCRIBE_TOPIC_PARTITIONS_API_INFO,
@@ -67,7 +67,7 @@ impl RequestHeader {
         request_api_key: i16,
         request_api_version: i16,
         correlation_id: i32,
-        client_id: HeaderClientId,
+        client_id: KafkaString,
         tag_buffer: TagBuffer,
     ) -> Self {
         RequestHeader::RequestHeaderV2(RequestHeaderV2 {
@@ -99,7 +99,7 @@ impl RequestHeader {
 
     pub fn client_id(&self) -> &str {
         match self {
-            RequestHeader::RequestHeaderV2(header) => &header.client_id.id,
+            RequestHeader::RequestHeaderV2(header) => &header.client_id,
         }
     }
 }
@@ -117,29 +117,8 @@ pub struct RequestHeaderV2 {
     pub request_api_key: i16,
     pub request_api_version: i16,
     pub correlation_id: i32,
-    pub client_id: HeaderClientId,
+    pub client_id: KafkaString,
     pub tag_buffer: TagBuffer,
-}
-
-#[derive(Debug, Encode)]
-pub struct HeaderClientId {
-    pub id: String,
-}
-
-impl HeaderClientId {
-    pub fn new(id: String) -> Self {
-        Self { id }
-    }
-}
-
-impl Decode for HeaderClientId {
-    fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self> {
-        let length = u16::decode(buffer)?;
-        let mut string_buffer = vec![0; length as usize];
-        <Cursor<&[u8]> as io::Read>::read_exact(buffer, &mut string_buffer)?;
-        let id = String::from_utf8(string_buffer)?;
-        Ok(HeaderClientId { id })
-    }
 }
 
 #[derive(Debug)]
@@ -164,13 +143,13 @@ pub fn request_api_versions(request_api_version: i16) -> RequestMessage {
             API_VERSIONS_API_INFO.api_key,
             request_api_version,
             0,
-            HeaderClientId::new("myclient".to_string()),
-            TagBuffer::new(None),
+            KafkaString::new("myclient".to_string()),
+            TagBuffer::default(),
         ),
         body: RequestBody::ApiVersionsV4(ApiVersionsV4ReqeustBody {
-            client_id: "myclient".to_string(),
-            client_software_version: "0.1".to_string(),
-            tag_buffer: TagBuffer::new(None),
+            client_id: CompactString::new("myclient".to_string()),
+            client_software_version: CompactString::new("0.1".to_string()),
+            tag_buffer: TagBuffer::default(),
         }),
     }
 }

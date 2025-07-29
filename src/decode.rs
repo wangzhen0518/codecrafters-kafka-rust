@@ -1,6 +1,6 @@
 use std::{
     fmt::Display,
-    io::{Cursor, Read, Seek},
+    io::{Cursor, Read},
     num, str, string,
 };
 
@@ -46,60 +46,6 @@ impl Decode for bool {
             x => Err(DecodeError::Other(
                 format!("Found {} when decoding bool", x).into(),
             )),
-        }
-    }
-}
-
-impl<T: Decode> Decode for Vec<T> {
-    fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self> {
-        let length = u8::decode(buffer)?;
-        let mut decode_vec = vec![];
-        assert!(
-            length > 0,
-            "Vector's length must greater than 0 when decoding"
-        );
-        for _ in 0..length - 1 {
-            let item = T::decode(buffer)?;
-            decode_vec.push(item);
-        }
-
-        Ok(decode_vec)
-    }
-}
-
-impl<T: Decode> Decode for Option<Vec<T>> {
-    fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self> {
-        let length = u8::decode(buffer)?;
-        if length == 0 {
-            Ok(None)
-        } else {
-            buffer.seek_relative(-1).unwrap();
-            Ok(Some(<Vec<T> as Decode>::decode(buffer)?))
-        }
-    }
-}
-
-impl Decode for String {
-    fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self> {
-        let length = u8::decode(buffer)?;
-        assert!(
-            length > 0,
-            "String's length must greater than 0 when decoding"
-        );
-        let mut string_buffer = vec![0; (length - 1) as usize];
-        buffer.read_exact(&mut string_buffer)?;
-        String::from_utf8(string_buffer).map_err(|err| err.into())
-    }
-}
-
-impl Decode for Option<String> {
-    fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self> {
-        let length = u8::decode(buffer)?;
-        if length == 0 {
-            Ok(None)
-        } else {
-            buffer.seek_relative(-1).unwrap();
-            Ok(Some(String::decode(buffer)?))
         }
     }
 }
