@@ -10,6 +10,7 @@ mod connection;
 mod decode;
 mod describe_topic_partitions;
 mod encode;
+mod metadata_log;
 mod request_message;
 mod response_message;
 mod utils;
@@ -38,6 +39,10 @@ async fn process(socket: TcpStream) {
     }
 }
 
+fn init() {
+    metadata_log::init_read_metadata_log().expect("Failed to read metadata log");
+}
+
 #[tokio::main]
 async fn main() {
     utils::config_logger();
@@ -45,6 +50,8 @@ async fn main() {
     let listener = TcpListener::bind("127.0.0.1:9092")
         .await
         .expect("Failed to bind to 127.0.0.1:9092");
+
+    init();
 
     loop {
         match listener.accept().await {

@@ -22,8 +22,47 @@ pub const UNKNOWN_TOPIC_ERROR: i16 = 3; //TODO 考虑怎么把错误码和数据
 
 lazy_static! {
     pub static ref DESCRIBE_TOPIC_PARTITIONS_API_INFO: ApiKey =
-        ApiKey::new(75, 0, 0, TagBuffer::new(None));
-    pub static ref TOPIC_PARTITIONS: HashMap<String, TopicInfo> = HashMap::from([]);
+        ApiKey::new(75, 0, 0, TagBuffer::default());
+    pub static ref TOPIC_PARTITIONS: Arc<Mutex<HashMap<CompactString, TopicInfo>>> = {
+        let map = HashMap::from([
+            // (
+            // "foo".to_string(),
+            // TopicInfo {
+            //     name: "foo".to_string(),
+            //     id: Uuid::from_u128(0xe392806d_b5334810_ba030b43_c49b60fc),
+            //     is_internal: false,
+            //     partitions_array: vec![
+            //         TopicPartition {
+            //             error_code: 0,
+            //             index: 0,
+            //             leader_id: 1,
+            //             leader_epoch: 0,
+            //             repica_nodes: vec![RepicaNode::new(1)],
+            //             isr_nodes: vec![RepicaNode::new(1)],
+            //             eligible_leader_replicas: vec![],
+            //             last_known_elr: vec![],
+            //             offline_replicas: vec![],
+            //             tag_buffer: TagBuffer::new(None),
+            //         },
+            //         TopicPartition {
+            //             error_code: 0,
+            //             index: 1,
+            //             leader_id: 1,
+            //             leader_epoch: 0,
+            //             repica_nodes: vec![RepicaNode::new(1)],
+            //             isr_nodes: vec![RepicaNode::new(1)],
+            //             eligible_leader_replicas: vec![],
+            //             last_known_elr: vec![],
+            //             offline_replicas: vec![],
+            //             tag_buffer: TagBuffer::new(None),
+            //         },
+            //     ],
+            //     topic_authorized_operations: TopicAuthorizedOperations::default(),
+            // },
+        // )
+        ]);
+        Arc::new(Mutex::new(map)) //TODO 考虑异步初始化的事
+    };
 }
 
 pub struct TopicInfo {
@@ -190,7 +229,8 @@ impl Decode for TopicAuthorizedOperations {
 }
 
 pub fn init_topic_partitions(metadata_log: &MetadataLog) {
-    for record_batch in metadata_log.record_batches() {
+    for record_batch in metadata_log.get_record_batches() {
+        let mut found = false;
         let mut topic_info = TopicInfo {
             name: CompactString::default(),
             id: Uuid::nil(),
@@ -198,14 +238,16 @@ pub fn init_topic_partitions(metadata_log: &MetadataLog) {
             partitions_array: CompactArray::empty(),
             topic_authorized_operations: TopicAuthorizedOperations::default(),
         };
-        if let Some(records) = record_batch.records().inner() {
+        if let Some(records) = record_batch.get_records().inner() {
             for record in records {
-                match record.value() {
+                match record.get_value() {
                     RecordValue::Topic(topic) => {
+                        found = true;
                         topic_info.name = topic.name.clone();
                         topic_info.id = topic.id;
                     }
                     RecordValue::Partition(partition) => {
+                        found = true;
                         let topic_partition = TopicPartition {
                             error_code: 0,                //TODO 包含在哪里
                             index: partition.parition_id, //TODO 是否是同一个属性
@@ -228,10 +270,12 @@ pub fn init_topic_partitions(metadata_log: &MetadataLog) {
                 }
             }
         }
-        TOPIC_PARTITIONS
-            .lock()
-            .expect("Failed to get TOPIC_PARITIONS's lock")
-            .insert(topic_info.name.clone(), topic_info);
+        if found {
+            TOPIC_PARTITIONS
+                .lock()
+                .expect("Failed to get TOPIC_PARITIONS's lock")
+                .insert(topic_info.name.clone(), topic_info);
+        }
     }
 }
 

@@ -3,6 +3,7 @@ pub mod common_struct;
 pub mod decode;
 pub mod describe_topic_partitions;
 pub mod encode;
+pub mod metadata_log;
 pub mod request_message;
 pub mod response_message;
 pub mod utils;
