@@ -18,7 +18,7 @@ use crate::{
     response_message::{ResponseBody, ResponseHeader, ResponseMessage},
 };
 
-pub const UNKNOWN_TOPIC_ERROR: i16 = 3; //TODO 考虑怎么把错误码和数据结构结合到一起
+pub const UNKNOWN_TOPIC_OR_PARTITION: i16 = 3; //TODO 考虑怎么把错误码和数据结构结合到一起
 
 lazy_static! {
     pub static ref DESCRIBE_TOPIC_PARTITIONS_API_INFO: ApiKey =
@@ -74,7 +74,7 @@ pub struct TopicInfo {
 }
 
 #[derive(Debug, Decode, Encode)]
-pub struct DescribeTopicPartitionsV0RequestBody {
+pub struct DescribeTopicPartitionsRequestBodyV0 {
     topics: CompactArray<TopicRequest>,
     response_partition_limit: i32,
     cursor: OptionTopicCursor,
@@ -136,7 +136,7 @@ impl Decode for OptionTopicCursor {
 }
 
 #[derive(Debug, Encode, Decode)]
-pub struct DescribeTopicPartitionsV0ResponseBody {
+pub struct DescribeTopicPartitionsResponseBodyV0 {
     throttle_time: i32,
     topic_array: CompactArray<TopicResponse>,
     next_curor: OptionTopicCursor,
@@ -281,7 +281,7 @@ pub fn init_topic_partitions(metadata_log: &MetadataLog) {
 
 pub fn execute_describe_topic_partitions(
     header: &RequestHeaderV2,
-    body: &DescribeTopicPartitionsV0RequestBody,
+    body: &DescribeTopicPartitionsRequestBodyV0,
 ) -> ResponseMessage {
     let _request_api_version = header.request_api_version; // TODO 需要校验版本吗
     let correlation_id = header.correlation_id;
@@ -304,7 +304,7 @@ pub fn execute_describe_topic_partitions(
             }
         } else {
             TopicResponse {
-                error_code: UNKNOWN_TOPIC_ERROR,
+                error_code: UNKNOWN_TOPIC_OR_PARTITION,
                 name: topic_request.name.clone(),
                 id: Uuid::nil(),
                 is_internal: false,
@@ -318,7 +318,7 @@ pub fn execute_describe_topic_partitions(
 
     ResponseMessage::new(
         ResponseHeader::new_v1(correlation_id),
-        ResponseBody::DescribeTopicPartitionsV0(DescribeTopicPartitionsV0ResponseBody {
+        ResponseBody::DescribeTopicPartitionsV0(DescribeTopicPartitionsResponseBodyV0 {
             throttle_time: 0,
             topic_array: CompactArray::new(Some(topic_array)),
             next_curor: OptionTopicCursor::default(),

@@ -1,11 +1,11 @@
 use std::io::{self, Cursor};
 
 use crate::{
-    api_versions::{execute_api_verions, ApiVersionsV4ResponseBody, API_VERSIONS_API_INFO},
+    api_versions::{execute_api_verions, ApiVersionsResponseBodyV4, API_VERSIONS_API_INFO},
     common_struct::TagBuffer,
     decode::{Decode, DecodeResult},
     describe_topic_partitions::{
-        execute_describe_topic_partitions, DescribeTopicPartitionsV0ResponseBody,
+        execute_describe_topic_partitions, DescribeTopicPartitionsResponseBodyV0,
         DESCRIBE_TOPIC_PARTITIONS_API_INFO,
     },
     encode::Encode,
@@ -48,9 +48,9 @@ impl ResponseMessage {
         let message_size = u32::decode(buffer)?;
         let header = ResponseHeader::ResponseHeaderV1(ResponseHeaderV1::decode(buffer)?);
         let body = if request_api_key == API_VERSIONS_API_INFO.api_key {
-            ResponseBody::ApiVersionsV4(ApiVersionsV4ResponseBody::decode(buffer)?)
+            ResponseBody::ApiVersionsV4(ApiVersionsResponseBodyV4::decode(buffer)?)
         } else if request_api_key == DESCRIBE_TOPIC_PARTITIONS_API_INFO.api_key {
-            ResponseBody::DescribeTopicPartitionsV0(DescribeTopicPartitionsV0ResponseBody::decode(
+            ResponseBody::DescribeTopicPartitionsV0(DescribeTopicPartitionsResponseBodyV0::decode(
                 buffer,
             )?)
         } else {
@@ -120,8 +120,8 @@ impl ResponseHeaderV1 {
 
 #[derive(Debug)]
 pub enum ResponseBody {
-    ApiVersionsV4(ApiVersionsV4ResponseBody),
-    DescribeTopicPartitionsV0(DescribeTopicPartitionsV0ResponseBody),
+    ApiVersionsV4(ApiVersionsResponseBodyV4),
+    DescribeTopicPartitionsV0(DescribeTopicPartitionsResponseBodyV0),
 }
 
 impl Encode for ResponseBody {

@@ -27,21 +27,21 @@ lazy_static! {
 }
 
 #[derive(Debug, Decode, Encode)]
-pub struct ApiVersionsV4ReqeustBody {
+pub struct ApiVersionsReqeustBodyV4 {
     pub client_id: CompactString,
     pub client_software_version: CompactString,
     pub tag_buffer: TagBuffer,
 }
 
 #[derive(Debug, Encode, Decode)]
-pub struct ApiVersionsV4ResponseBody {
+pub struct ApiVersionsResponseBodyV4 {
     error_code: i16,
     api_keys: CompactArray<ApiKey>,
     throttle_time_ms: i32,
     tag_buffer: TagBuffer,
 }
 
-impl ApiVersionsV4ResponseBody {
+impl ApiVersionsResponseBodyV4 {
     pub fn new(
         error_code: i16,
         api_keys: CompactArray<ApiKey>,
@@ -98,7 +98,7 @@ impl Ord for ApiKey {
 
 pub fn execute_api_verions(
     header: &RequestHeaderV2,
-    _body: &ApiVersionsV4ReqeustBody,
+    _body: &ApiVersionsReqeustBodyV4,
 ) -> ResponseMessage {
     let request_api_version = header.request_api_version;
     let correlation_id = header.correlation_id;
@@ -113,7 +113,7 @@ pub fn execute_api_verions(
 
     ResponseMessage::new(
         ResponseHeader::new_v0(correlation_id),
-        ResponseBody::ApiVersionsV4(ApiVersionsV4ResponseBody::new(
+        ResponseBody::ApiVersionsV4(ApiVersionsResponseBodyV4::new(
             error_code,
             CompactArray::new(Some(api_keys)),
             0,

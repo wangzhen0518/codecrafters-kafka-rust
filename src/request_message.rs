@@ -1,11 +1,11 @@
 use std::io::Cursor;
 
 use crate::{
-    api_versions::{ApiVersionsV4ReqeustBody, API_VERSIONS_API_INFO},
+    api_versions::{ApiVersionsReqeustBodyV4, API_VERSIONS_API_INFO},
     common_struct::{CompactString, KafkaString, TagBuffer},
     decode::{Decode, DecodeResult},
     describe_topic_partitions::{
-        DescribeTopicPartitionsV0RequestBody, DESCRIBE_TOPIC_PARTITIONS_API_INFO,
+        DescribeTopicPartitionsRequestBodyV0, DESCRIBE_TOPIC_PARTITIONS_API_INFO,
     },
     encode::Encode,
 };
@@ -41,9 +41,9 @@ impl Decode for RequestMessage {
         let message_size = u32::decode(buffer)?;
         let header = RequestHeader::RequestHeaderV2(RequestHeaderV2::decode(buffer)?);
         let body = if header.request_api_key() == API_VERSIONS_API_INFO.api_key {
-            RequestBody::ApiVersionsV4(ApiVersionsV4ReqeustBody::decode(buffer)?)
+            RequestBody::ApiVersionsV4(ApiVersionsReqeustBodyV4::decode(buffer)?)
         } else if header.request_api_key() == DESCRIBE_TOPIC_PARTITIONS_API_INFO.api_key {
-            RequestBody::DescribeTopicPartitionsV0(DescribeTopicPartitionsV0RequestBody::decode(
+            RequestBody::DescribeTopicPartitionsV0(DescribeTopicPartitionsRequestBodyV0::decode(
                 buffer,
             )?)
         } else {
@@ -123,8 +123,8 @@ pub struct RequestHeaderV2 {
 
 #[derive(Debug)]
 pub enum RequestBody {
-    ApiVersionsV4(ApiVersionsV4ReqeustBody),
-    DescribeTopicPartitionsV0(DescribeTopicPartitionsV0RequestBody),
+    ApiVersionsV4(ApiVersionsReqeustBodyV4),
+    DescribeTopicPartitionsV0(DescribeTopicPartitionsRequestBodyV0),
 }
 
 impl Encode for RequestBody {
@@ -146,7 +146,7 @@ pub fn request_api_versions(request_api_version: i16) -> RequestMessage {
             KafkaString::new("myclient".to_string()),
             TagBuffer::default(),
         ),
-        body: RequestBody::ApiVersionsV4(ApiVersionsV4ReqeustBody {
+        body: RequestBody::ApiVersionsV4(ApiVersionsReqeustBodyV4 {
             client_id: CompactString::new("myclient".to_string()),
             client_software_version: CompactString::new("0.1".to_string()),
             tag_buffer: TagBuffer::default(),
