@@ -10,10 +10,10 @@ use uuid::Uuid;
 
 use crate::{
     api_versions::ApiKey,
-    common_struct::{CompactArray, CompactString, TagBuffer},
+    common_struct::{CompactArray, CompactString, RecordValue, TagBuffer},
     decode::{Decode, DecodeError, DecodeResult},
     encode::Encode,
-    metadata_log::{MetadataLog, RecordValue},
+    metadata_log::MetadataLog,
     request_message::RequestHeaderV2,
     response_message::{ResponseBody, ResponseHeader, ResponseMessage},
 };
@@ -238,7 +238,7 @@ pub fn init_topic_partitions(metadata_log: &MetadataLog) {
             partitions_array: CompactArray::empty(),
             topic_authorized_operations: TopicAuthorizedOperations::default(),
         };
-        if let Some(records) = record_batch.get_records().inner() {
+        if let Some(records) = record_batch.get_records().get_inner() {
             for record in records {
                 match record.get_value() {
                     RecordValue::Topic(topic) => {

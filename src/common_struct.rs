@@ -535,6 +535,170 @@ impl Decode for CompactNullableString {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct KafkaBytes {
+    inner: Vec<u8>,
+}
+
+impl KafkaBytes {
+    pub fn new(inner: Vec<u8>) -> Self {
+        Self { inner }
+    }
+}
+
+impl Encode for KafkaBytes {
+    fn encode(&self) -> Vec<u8> {
+        if self.inner.len() >= i32::MAX as usize {
+            panic!(
+                "KafkaBytes length({}) is greater then i32::MAX({})",
+                self.inner.len(),
+                i32::MAX
+            );
+        } else {
+            let mut encode_res = self.inner.len().to_be_bytes().to_vec();
+            encode_res.append(&mut self.inner.clone());
+            encode_res
+        }
+    }
+}
+
+impl Decode for KafkaBytes {
+    fn decode(buffer: &mut std::io::Cursor<&[u8]>) -> crate::decode::DecodeResult<Self>
+    where
+        Self: Sized,
+    {
+        let length = i32::decode(buffer)?;
+        let mut bytes = vec![0_u8; length as usize];
+        buffer.read_exact(&mut bytes)?;
+        Ok(KafkaBytes::new(bytes))
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CompactBytes {
+    inner: Vec<u8>,
+}
+
+impl CompactBytes {
+    pub fn new(inner: Vec<u8>) -> Self {
+        Self { inner }
+    }
+}
+
+impl Encode for CompactBytes {
+    fn encode(&self) -> Vec<u8> {
+        let mut encode_res = VarInt::from_u64((self.inner.len() + 1) as u64).into_bytes();
+        encode_res.extend_from_slice(&self.inner);
+        encode_res
+    }
+}
+
+impl Decode for CompactBytes {
+    fn decode(buffer: &mut std::io::Cursor<&[u8]>) -> crate::decode::DecodeResult<Self>
+    where
+        Self: Sized,
+    {
+        let length = VarInt::decode(buffer)?.as_u64();
+        assert!(
+            length > 0,
+            "CompactBytes's length must bigger than 0 when decoding"
+        );
+        let mut inner = vec![0; (length - 1) as usize]; //TODO 是否需要预先置零
+        buffer.read_exact(&mut inner)?;
+        Ok(CompactBytes::new(inner))
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct NullableBytes {
+    inner: Option<Vec<u8>>,
+}
+
+impl NullableBytes {
+    pub fn new(inner: Option<Vec<u8>>) -> Self {
+        Self { inner }
+    }
+}
+
+impl Encode for NullableBytes {
+    fn encode(&self) -> Vec<u8> {
+        match &self.inner {
+            None => vec![0xff; mem::size_of::<i32>()],
+            Some(array) => {
+                if array.len() > i32::MAX as usize {
+                    panic!(
+                        "NullableBytes length({}) is bigger than i32::MAX({})",
+                        array.len(),
+                        i32::MAX
+                    );
+                } else {
+                    let mut encode_res = array.len().to_be_bytes().to_vec();
+                    encode_res.extend_from_slice(array);
+                    encode_res
+                }
+            }
+        }
+    }
+}
+
+impl Decode for NullableBytes {
+    fn decode(buffer: &mut std::io::Cursor<&[u8]>) -> crate::decode::DecodeResult<Self>
+    where
+        Self: Sized,
+    {
+        let length = i32::decode(buffer)?;
+        let inner = if length >= 0 {
+            let mut inner = vec![0; length as usize]; //TODO 是否需要预先置零
+            buffer.read_exact(&mut inner)?;
+            Some(inner)
+        } else {
+            None
+        };
+        Ok(NullableBytes::new(inner))
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CompactNullableBytes {
+    inner: Option<Vec<u8>>,
+}
+
+impl CompactNullableBytes {
+    pub fn new(inner: Option<Vec<u8>>) -> Self {
+        Self { inner }
+    }
+}
+
+impl Encode for CompactNullableBytes {
+    fn encode(&self) -> Vec<u8> {
+        match &self.inner {
+            None => vec![0x00],
+            Some(array) => {
+                let mut encode_res = VarInt::from_u64((array.len() + 1) as u64).into_bytes();
+                encode_res.extend_from_slice(array);
+                encode_res
+            }
+        }
+    }
+}
+
+impl Decode for CompactNullableBytes {
+    fn decode(buffer: &mut std::io::Cursor<&[u8]>) -> crate::decode::DecodeResult<Self>
+    where
+        Self: Sized,
+    {
+        let length = VarInt::decode(buffer)?.as_u64();
+        let inner = if length > 0 {
+            let mut inner = vec![0; (length - 1) as usize]; //TODO 是否需要预先置零
+            buffer.read_exact(&mut inner)?;
+            Some(inner)
+        } else {
+            None
+        };
+        Ok(CompactNullableBytes::new(inner))
+    }
+}
+
 #[derive(Debug, Clone, Encode, Decode, Default)]
 pub struct TagBuffer {
     fields: CompactArray<TagSection>,
@@ -559,4 +723,251 @@ impl TagSection {
             data: CompactArray::new(data),
         }
     }
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct RecordBatch {
+    pub base_offset: i64,
+    pub batch_length: i32,
+    pub partition_leader_epoch: i32,
+    pub magic_byte: i8,
+    pub crc: i32,
+    pub attributes: MetadataAttributes,
+    pub last_offset_data: i32,
+    pub base_timestamp: i64,
+    pub max_timestamp: i64,
+    pub producer_id: i64,
+    pub producer_epoch: i16,
+    pub base_sequence: i32,
+    pub records: Array<Record>,
+}
+
+impl RecordBatch {
+    pub fn get_records(&self) -> &Array<Record> {
+        &self.records
+    }
+}
+
+bitflags! {
+    #[derive(Debug, Clone, Copy)]
+    pub struct MetadataAttributes: u16{
+        const NO_COMPRESSION = 0b000;
+        const GZIP = 0b001;
+        const SNAPPY = 0b010;
+        const LZ4 = 0b011;
+        const ZSTD = 0b100;
+        const TIMESTAMP_TYPE = 1 << 3;
+        const IS_TRANSACTIONAL = 1 << 4;
+        const IS_CONTROL_BATCH = 1 << 5;
+        const HAS_DELETE_HORIZON_MS = 1 << 6;
+    }
+}
+
+impl Encode for MetadataAttributes {
+    fn encode(&self) -> Vec<u8> {
+        self.bits().encode()
+    }
+}
+
+impl Decode for MetadataAttributes {
+    fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self>
+    where
+        Self: Sized,
+    {
+        let flags = u16::decode(buffer)?;
+        MetadataAttributes::from_bits(flags).ok_or(DecodeError::Other(
+            format!("MetadataAttributes contains unknown bits: {:#08x}", flags).into(),
+        ))
+    }
+}
+
+pub struct RecordType;
+
+impl RecordType {
+    pub const TOPIC_RECORD: i8 = 0x02;
+    pub const PARITION_RECORD: i8 = 0x03;
+    pub const FEATURE_LEVEL_RECORD: i8 = 0x0c;
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct Record {
+    pub length: VarInt, // signed
+    pub attributes: i8,
+    pub timestamp_delta: VarLong,
+    pub offset_delta: VarInt,
+    pub key: RecordKey, //TODO 检查 key 的 encode, decode
+    pub value: RecordValue,
+    pub headers_array_count: CompactArray<RecordHeader>,
+}
+
+impl Record {
+    pub fn get_value(&self) -> &RecordValue {
+        &self.value
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RecordKey {
+    inner: Option<Vec<u8>>,
+}
+
+impl RecordKey {
+    pub fn new(inner: Option<Vec<u8>>) -> Self {
+        Self { inner }
+    }
+
+    pub fn get_inner(&self) -> &Option<Vec<u8>> {
+        &self.inner
+    }
+}
+
+impl Encode for RecordKey {
+    fn encode(&self) -> Vec<u8> {
+        match &self.inner {
+            None => vec![0x01],
+            Some(array) => {
+                let mut encode_res = VarInt::from_i64(array.len() as i64).into_bytes();
+                encode_res.extend_from_slice(array);
+                encode_res
+            }
+        }
+    }
+}
+
+impl Decode for RecordKey {
+    fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self>
+    where
+        Self: Sized,
+    {
+        let length = VarInt::decode(buffer)?.as_i64();
+        let inner = if length >= 0 {
+            let mut decode_res = vec![0_u8; length as usize];
+            buffer.read_exact(&mut decode_res)?;
+            Some(decode_res)
+        } else {
+            None
+        };
+        Ok(RecordKey::new(inner))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum RecordValue {
+    Topic(TopicRecord),
+    Partition(ParitionRecord),
+    FeatureLevel(FeatureLevelRecord),
+    Unknown(VarInt),
+}
+
+impl RecordValue {
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, RecordValue::Unknown(_))
+    }
+}
+
+impl Encode for RecordValue {
+    fn encode(&self) -> Vec<u8> {
+        match &self {
+            RecordValue::Topic(record) => {
+                let mut record_encode = record.encode();
+                let mut encode_res = VarInt::from_i64(record_encode.len() as i64).into_bytes();
+                encode_res.append(&mut record_encode);
+                encode_res
+            }
+            RecordValue::Partition(record) => {
+                let mut record_encode = record.encode();
+                let mut encode_res = VarInt::from_i64(record_encode.len() as i64).into_bytes();
+                encode_res.append(&mut record_encode);
+                encode_res
+            }
+            RecordValue::FeatureLevel(record) => {
+                let mut record_encode = record.encode();
+                let mut encode_res = VarInt::from_i64(record_encode.len() as i64).into_bytes();
+                encode_res.append(&mut record_encode);
+                encode_res
+            }
+            RecordValue::Unknown(length) => {
+                let mut record_encode = vec![0x00; length.as_i64() as usize];
+                let mut encode_res = length.as_bytes().clone();
+                encode_res.append(&mut record_encode);
+                encode_res
+            }
+        }
+    }
+}
+
+impl Decode for RecordValue {
+    fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self>
+    where
+        Self: Sized,
+    {
+        let value_length = VarInt::decode(buffer)?;
+        let _frame_version = i8::decode(buffer)?;
+        let record_type = i8::decode(buffer)?;
+        buffer.seek_relative(-2).expect("Failed to seek");
+        let record_value = match record_type {
+            RecordType::TOPIC_RECORD => RecordValue::Topic(TopicRecord::decode(buffer)?),
+            RecordType::PARITION_RECORD => RecordValue::Partition(ParitionRecord::decode(buffer)?),
+            RecordType::FEATURE_LEVEL_RECORD => {
+                RecordValue::FeatureLevel(FeatureLevelRecord::decode(buffer)?)
+            }
+            record_type => {
+                tracing::error!("Unknown record type: {}", record_type);
+                buffer
+                    .seek_relative(value_length.as_i64())
+                    .expect("Failed to seek");
+                RecordValue::Unknown(value_length)
+            }
+        };
+        Ok(record_value)
+    }
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct TopicRecord {
+    pub frame_version: i8,
+    pub record_type: i8,
+    pub version: i8,
+    pub name: CompactString,
+    pub id: Uuid,
+    pub tag_buffers: TagBuffer,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct ParitionRecord {
+    pub frame_version: i8,
+    pub record_type: i8,
+    pub version: i8,
+    pub parition_id: i32,
+    pub topic_uuid: Uuid,
+    pub replica_nodes: CompactArray<RepicaNode>,
+    pub isr_nodes: CompactArray<RepicaNode>,
+    pub removing_replicas_nodes: CompactArray<RepicaNode>,
+    pub adding_replicas_nodes: CompactArray<RepicaNode>,
+    pub leader_id: i32,
+    pub leader_epoch: i32,
+    pub partition_epoch: i32,
+    pub directories: CompactArray<Directory>,
+    pub tag_buffers: TagBuffer,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct Directory {
+    id: Uuid,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct FeatureLevelRecord {
+    frame_version: i8,
+    record_type: i8,
+    version: i8,
+    name: CompactString,
+    feature_level: i16,
+    tag_buffers: TagBuffer,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct RecordHeader {
+    key: CompactString,
+    value: CompactArray<u8>,
 }
