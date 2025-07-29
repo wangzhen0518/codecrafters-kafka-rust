@@ -11,6 +11,10 @@ struct MyStruct {
     a: Option<[u8; 1024]>,
 }
 
+pub fn as_u8(n: u64) -> u8 {
+    n as u8
+}
+
 fn main() {
     let config = bincode::config::standard()
         .with_big_endian()
@@ -39,4 +43,10 @@ fn main() {
 
     let x = <Option<u8> as Default>::default();
     println!("{:?}", x);
+
+    let x = -126_i8 as i64;
+    dbg!(&x);
+
+    let x = as_u8(0x32_11);
+    println!("{}", x);
 }

@@ -5,33 +5,94 @@ use std::{
 
 use crate::{decode::Decode, encode::Encode};
 
-#[derive(Debug, Clone, Encode, Decode, Default)]
-pub struct TagBuffer {
-    fields: CompactArray<TagSection>,
+const VARINTS_MASK: u8 = 0x7f;
+const PAY_LOAD_BIT_NUM: u8 = 7;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct Varint {
+    bytes: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Encode, Decode, Default)]
-pub struct TagSection {
-    tag: u8,
-    data: CompactArray<u8>,
+#[inline(always)]
+fn zigzag_encode(n: i64) -> u64 {
+    ((n << 1) ^ (n >> 63)) as u64
 }
 
-impl TagBuffer {
-    pub fn new(fields: CompactArray<TagSection>) -> Self {
-        Self { fields }
+#[inline(always)]
+fn zigzag_decode(n: u64) -> i64 {
+    ((n >> 1) as i64) ^ (-((n & 0x01) as i64))
+}
+
+impl Varint {
+    pub fn new(inner: Vec<u8>) -> Self {
+        Self { bytes: inner }
     }
-}
 
-impl TagSection {
-    pub fn new(tag: u8, data: Option<Vec<u8>>) -> Self {
-        Self {
-            tag,
-            data: CompactArray::new(data),
+    pub fn from_u64(mut n: u64) -> Self {
+        let mut bytes = vec![];
+        let mut byte = n as u8 & VARINTS_MASK;
+        n >>= PAY_LOAD_BIT_NUM;
+        while n > 0 {
+            byte |= !VARINTS_MASK;
+            bytes.push(byte);
+            byte = n as u8 & VARINTS_MASK;
+            n >>= PAY_LOAD_BIT_NUM;
         }
+        bytes.push(byte);
+        Varint::new(bytes)
+    }
+
+    pub fn from_i64(n: i64) -> Self {
+        let n = zigzag_encode(n);
+        Varint::from_u64(n)
+    }
+
+    pub fn as_u64(&self) -> u64 {
+        let mut n = 0;
+        for byte in self.bytes.iter().rev() {
+            let payload = byte & VARINTS_MASK;
+            n = n << PAY_LOAD_BIT_NUM | (payload as u64);
+        }
+        n
+    }
+
+    pub fn as_i64(&self) -> i64 {
+        let n = self.as_u64();
+        zigzag_decode(n)
+    }
+
+    pub fn as_bytes(&self) -> &Vec<u8> {
+        &self.bytes
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+impl Encode for Varint {
+    fn encode(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+}
+
+impl Decode for Varint {
+    fn decode(buffer: &mut std::io::Cursor<&[u8]>) -> crate::decode::DecodeResult<Self>
+    where
+        Self: Sized,
+    {
+        let mut bytes = vec![];
+        let mut byte = u8::decode(buffer)?;
+        while byte >> PAY_LOAD_BIT_NUM == 1 {
+            bytes.push(byte);
+            byte = u8::decode(buffer)?;
+        }
+        bytes.push(byte);
+        Ok(Varint::new(bytes))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Array<T> {
     inner: Option<Vec<T>>,
 }
@@ -85,7 +146,7 @@ impl<T: Decode> Decode for Array<T> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CompactArray<T> {
     inner: Option<Vec<T>>,
 }
@@ -101,19 +162,12 @@ impl<T: Encode> Encode for CompactArray<T> {
         match &self.inner {
             None => vec![0x00],
             Some(array) => {
-                if array.len() >= u8::MAX as usize {
-                    panic!(
-                        "CompactArray length({}) must be smaller than u8::MAX({})",
-                        array.len(),
-                        u8::MAX
-                    );
-                } else {
-                    let mut encode_res = vec![(array.len() + 1) as u8];
-                    for item in array.iter() {
-                        encode_res.append(&mut item.encode());
-                    }
-                    encode_res
+                let mut encode_res =
+                    Varint::from_u64((array.len() + 1) as u64).into_bytes();
+                for item in array.iter() {
+                    encode_res.append(&mut item.encode());
                 }
+                encode_res
             }
         }
     }
@@ -124,7 +178,7 @@ impl<T: Decode> Decode for CompactArray<T> {
     where
         Self: Sized,
     {
-        let length = u8::decode(buffer)?;
+        let length = Varint::decode(buffer)?.as_u64();
         let inner = if length > 0 {
             let mut decode_vec = vec![];
             for _ in 0..length - 1 {
@@ -198,7 +252,7 @@ macro_rules! impl_inner_for_array {
 }
 impl_inner_for_array!(Array<T>, CompactArray<T>);
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct KafkaString {
     inner: String,
 }
@@ -242,7 +296,7 @@ impl Decode for KafkaString {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct CompactString {
     inner: String,
 }
@@ -255,17 +309,9 @@ impl CompactString {
 
 impl Encode for CompactString {
     fn encode(&self) -> Vec<u8> {
-        if self.inner.len() >= u8::MAX as usize {
-            panic!(
-                "CompactString length({}) must be smaller than u8::MAX({})",
-                self.inner.len(),
-                u8::MAX
-            );
-        } else {
-            let mut encode_res = vec![(self.inner.len() + 1) as u8];
-            encode_res.extend(self.inner.as_bytes());
-            encode_res
-        }
+        let mut encode_res = Varint::from_u64((self.inner.len() + 1) as u64).into_bytes();
+        encode_res.extend(self.inner.as_bytes());
+        encode_res
     }
 }
 
@@ -274,7 +320,7 @@ impl Decode for CompactString {
     where
         Self: Sized,
     {
-        let length = u8::decode(buffer)?;
+        let length = Varint::decode(buffer)?.as_u64();
         assert!(
             length > 0,
             "CompactString's length must bigger than 0 when decoding"
@@ -306,7 +352,7 @@ macro_rules! impl_deref_for_string {
 }
 impl_deref_for_string!(KafkaString, CompactString);
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct NullableString {
     inner: Option<String>,
 }
@@ -343,7 +389,7 @@ impl Decode for NullableString {
     where
         Self: Sized,
     {
-        let length = i16::decode(buffer)?; //TODO 检查一下，如果超过 i16 上限是否会报错
+        let length = i16::decode(buffer)?;
         let inner = if length >= 0 {
             let mut string_buffer = vec![0; length as usize]; //TODO 是否需要预先置零
             buffer.read_exact(&mut string_buffer)?;
@@ -356,7 +402,7 @@ impl Decode for NullableString {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct CompactNullableString {
     inner: Option<String>,
 }
@@ -370,20 +416,12 @@ impl CompactNullableString {
 impl Encode for CompactNullableString {
     fn encode(&self) -> Vec<u8> {
         match &self.inner {
-            Some(s) => {
-                if s.len() >= u8::MAX as usize {
-                    panic!(
-                        "CompactNullableString length({}) must be smaller than u8::MAX({})",
-                        s.len(),
-                        u8::MAX
-                    );
-                } else {
-                    let mut encode_res = vec![(s.len() + 1) as u8];
-                    encode_res.extend(s.as_bytes());
-                    encode_res
-                }
-            }
             None => vec![0x00],
+            Some(s) => {
+                let mut encode_res = Varint::from_u64((s.len() + 1) as u64).into_bytes();
+                encode_res.extend(s.as_bytes());
+                encode_res
+            }
         }
     }
 }
@@ -393,7 +431,7 @@ impl Decode for CompactNullableString {
     where
         Self: Sized,
     {
-        let length = u8::decode(buffer)?;
+        let length = Varint::decode(buffer)?.as_u64();
         let inner = if length > 0 {
             let mut string_buffer = vec![0; (length - 1) as usize]; //TODO 是否需要预先置零
             buffer.read_exact(&mut string_buffer)?;
@@ -403,5 +441,31 @@ impl Decode for CompactNullableString {
             None
         };
         Ok(CompactNullableString::new(inner))
+    }
+}
+
+#[derive(Debug, Clone, Encode, Decode, Default)]
+pub struct TagBuffer {
+    fields: CompactArray<TagSection>,
+}
+
+#[derive(Debug, Clone, Encode, Decode, Default)]
+pub struct TagSection {
+    tag: u8,
+    data: CompactArray<u8>,
+}
+
+impl TagBuffer {
+    pub fn new(fields: CompactArray<TagSection>) -> Self {
+        Self { fields }
+    }
+}
+
+impl TagSection {
+    pub fn new(tag: u8, data: Option<Vec<u8>>) -> Self {
+        Self {
+            tag,
+            data: CompactArray::new(data),
+        }
     }
 }
