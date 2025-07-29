@@ -10,6 +10,7 @@ mod connection;
 mod decode;
 mod describe_topic_partitions;
 mod encode;
+mod fetch;
 mod metadata_log;
 mod request_message;
 mod response_message;

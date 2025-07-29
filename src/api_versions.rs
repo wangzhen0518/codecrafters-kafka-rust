@@ -7,6 +7,7 @@ use crate::{
     decode::Decode,
     describe_topic_partitions::DESCRIBE_TOPIC_PARTITIONS_API_INFO,
     encode::Encode,
+    fetch::FETCH_API_INFO,
     request_message::RequestHeaderV2,
     response_message::{ResponseBody, ResponseHeader, ResponseMessage},
 };
@@ -16,6 +17,7 @@ pub const UNSUPPORTED_VERSION_ERROR: i16 = 35;
 lazy_static! {
     pub static ref API_VERSIONS_API_INFO: ApiKey = ApiKey::new(18, 0, 4, TagBuffer::default());
     pub static ref SUPPORT_APIS: HashMap<i16, ApiKey> = HashMap::from([
+        (FETCH_API_INFO.api_key, FETCH_API_INFO.clone()),
         (API_VERSIONS_API_INFO.api_key, API_VERSIONS_API_INFO.clone()),
         (
             DESCRIBE_TOPIC_PARTITIONS_API_INFO.api_key,
