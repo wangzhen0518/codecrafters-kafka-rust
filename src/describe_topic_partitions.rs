@@ -9,7 +9,7 @@ use lazy_static::lazy_static;
 use uuid::Uuid;
 
 use crate::{
-    api_versions::ApiKey,
+    api_versions::{ApiKey, ApiVersionsResponseBodyV4, UNSUPPORTED_VERSION_ERROR},
     common_struct::{CompactArray, CompactString, RecordValue, TagBuffer},
     decode::{Decode, DecodeError, DecodeResult},
     encode::Encode,
@@ -83,6 +83,7 @@ pub struct DescribeTopicPartitionsRequestBodyV0 {
 
 #[derive(Debug, Decode, Encode)]
 pub struct TopicRequest {
+    //TODO 考虑是否需要修改名称
     name: CompactString,
     tag_buffer: TagBuffer,
 }
@@ -283,44 +284,60 @@ pub fn execute_describe_topic_partitions(
     header: &RequestHeaderV2,
     body: &DescribeTopicPartitionsRequestBodyV0,
 ) -> ResponseMessage {
-    let _request_api_version = header.request_api_version; // TODO 需要校验版本吗
+    let request_api_version = header.request_api_version;
     let correlation_id = header.correlation_id;
 
-    let mut topic_array = vec![];
-    for topic_request in body.topics.as_ref().unwrap().iter() {
-        let topic_resp = if let Some(topic_info) = TOPIC_PARTITIONS
-            .lock()
-            .expect("Failed to get TOPIC_PARTITIONS")
-            .get(&topic_request.name)
-        {
-            TopicResponse {
-                error_code: 0,
-                name: topic_info.name.clone(),
-                id: topic_info.id,
-                is_internal: topic_info.is_internal,
-                partitions_array: topic_info.partitions_array.clone(),
-                topic_authorized_operations: topic_info.topic_authorized_operations,
-                tag_buffer: TagBuffer::default(),
-            }
-        } else {
-            TopicResponse {
-                error_code: UNKNOWN_TOPIC_OR_PARTITION,
-                name: topic_request.name.clone(),
-                id: Uuid::nil(),
-                is_internal: false,
-                partitions_array: CompactArray::empty(),
-                topic_authorized_operations: TopicAuthorizedOperations::default(),
-                tag_buffer: TagBuffer::default(),
-            }
-        };
-        topic_array.push(topic_resp);
+    if request_api_version < DESCRIBE_TOPIC_PARTITIONS_API_INFO.min_version
+        || request_api_version > DESCRIBE_TOPIC_PARTITIONS_API_INFO.max_version
+    {
+        return ResponseMessage::new(
+            ResponseHeader::new_v0(correlation_id),
+            ResponseBody::ApiVersionsV4(ApiVersionsResponseBodyV4::new(
+                UNSUPPORTED_VERSION_ERROR,
+                CompactArray::new(Some(vec![])),
+                0,
+                TagBuffer::default(),
+            )),
+        );
+    }
+
+    let mut describe_topics = vec![];
+    if let Some(topics) = body.topics.as_ref() {
+        for request_topic in topics.iter() {
+            let resp_topic = if let Some(topic_info) = TOPIC_PARTITIONS
+                .lock()
+                .expect("Failed to get TOPIC_PARTITIONS")
+                .get(&request_topic.name)
+            {
+                TopicResponse {
+                    error_code: 0,
+                    name: topic_info.name.clone(),
+                    id: topic_info.id,
+                    is_internal: topic_info.is_internal,
+                    partitions_array: topic_info.partitions_array.clone(),
+                    topic_authorized_operations: topic_info.topic_authorized_operations,
+                    tag_buffer: TagBuffer::default(),
+                }
+            } else {
+                TopicResponse {
+                    error_code: UNKNOWN_TOPIC_OR_PARTITION,
+                    name: request_topic.name.clone(),
+                    id: Uuid::nil(),
+                    is_internal: false,
+                    partitions_array: CompactArray::empty(),
+                    topic_authorized_operations: TopicAuthorizedOperations::default(),
+                    tag_buffer: TagBuffer::default(),
+                }
+            };
+            describe_topics.push(resp_topic);
+        }
     }
 
     ResponseMessage::new(
         ResponseHeader::new_v1(correlation_id),
         ResponseBody::DescribeTopicPartitionsV0(DescribeTopicPartitionsResponseBodyV0 {
             throttle_time: 0,
-            topic_array: CompactArray::new(Some(topic_array)),
+            topic_array: CompactArray::new(Some(describe_topics)),
             next_curor: OptionTopicCursor::default(),
             tag_buffer: TagBuffer::default(),
         }),
