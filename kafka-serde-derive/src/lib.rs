@@ -9,7 +9,10 @@ pub fn derive_encode(input: TokenStream) -> TokenStream {
 
     let expanded = match input.data {
         syn::Data::Struct(data) => derive_encode_for_struct(&name, data),
-        _ => unimplemented!(),
+        data => unimplemented!(
+            "Derive Encode only has been implemented for struct, not {:?}",
+            data
+        ),
     };
 
     TokenStream::from(expanded)
@@ -58,7 +61,10 @@ pub fn derive_decode(input: TokenStream) -> TokenStream {
         syn::Data::Struct(data) => {
             derive_decode_for_struct(name, impl_generics, ty_generics, where_clause, data)
         }
-        _ => unimplemented!(),
+        data => unimplemented!(
+            "Derive Decode only has been implemented for struct, not {:?}",
+            data
+        ),
     };
 
     TokenStream::from(expanded)

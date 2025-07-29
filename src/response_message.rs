@@ -54,7 +54,7 @@ impl ResponseMessage {
                 buffer,
             )?)
         } else {
-            unimplemented!()
+            unimplemented!("Unknown request api key: {}", request_api_key);
         };
         Ok(ResponseMessage {
             message_size,

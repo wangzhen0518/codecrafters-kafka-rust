@@ -47,7 +47,7 @@ impl Decode for RequestMessage {
                 buffer,
             )?)
         } else {
-            unimplemented!()
+            unimplemented!("Unknown request api key: {}", header.request_api_key());
         };
         Ok(RequestMessage {
             message_size,
