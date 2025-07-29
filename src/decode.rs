@@ -117,8 +117,7 @@ impl Decode for Uuid {
     {
         let mut uuid_buffer = [0_u8; 16];
         buffer.read_exact(&mut uuid_buffer)?;
-        let uuid_str = str::from_utf8(&uuid_buffer)?;
-        let uuid = Uuid::parse_str(uuid_str)?;
+        let uuid = Uuid::from_bytes(uuid_buffer);
         Ok(uuid)
     }
 }
