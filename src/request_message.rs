@@ -8,6 +8,7 @@ use crate::{
         DescribeTopicPartitionsRequestBodyV0, DESCRIBE_TOPIC_PARTITIONS_API_INFO,
     },
     encode::Encode,
+    fetch::{FetchRequestBodyV16, FETCH_API_INFO},
 };
 
 #[derive(Debug, Encode)]
@@ -46,6 +47,8 @@ impl Decode for RequestMessage {
             RequestBody::DescribeTopicPartitionsV0(DescribeTopicPartitionsRequestBodyV0::decode(
                 buffer,
             )?)
+        } else if header.request_api_key() == FETCH_API_INFO.api_key {
+            RequestBody::FetchV16(FetchRequestBodyV16::decode(buffer)?)
         } else {
             unimplemented!("Unknown request api key: {}", header.request_api_key());
         };
@@ -125,6 +128,7 @@ pub struct RequestHeaderV2 {
 pub enum RequestBody {
     ApiVersionsV4(ApiVersionsReqeustBodyV4),
     DescribeTopicPartitionsV0(DescribeTopicPartitionsRequestBodyV0),
+    FetchV16(FetchRequestBodyV16),
 }
 
 impl Encode for RequestBody {
@@ -132,6 +136,7 @@ impl Encode for RequestBody {
         match self {
             RequestBody::ApiVersionsV4(body) => body.encode(),
             RequestBody::DescribeTopicPartitionsV0(body) => body.encode(),
+            RequestBody::FetchV16(body) => body.encode(),
         }
     }
 }

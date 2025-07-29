@@ -9,6 +9,7 @@ use crate::{
         DESCRIBE_TOPIC_PARTITIONS_API_INFO,
     },
     encode::Encode,
+    fetch::{execute_fetch, FetchResponseBodyV16, FETCH_API_INFO},
     request_message::{RequestBody, RequestHeader, RequestMessage},
 };
 
@@ -122,6 +123,7 @@ impl ResponseHeaderV1 {
 pub enum ResponseBody {
     ApiVersionsV4(ApiVersionsResponseBodyV4),
     DescribeTopicPartitionsV0(DescribeTopicPartitionsResponseBodyV0),
+    FetchV16(FetchResponseBodyV16),
 }
 
 impl Encode for ResponseBody {
@@ -129,6 +131,7 @@ impl Encode for ResponseBody {
         match self {
             ResponseBody::ApiVersionsV4(inner) => inner.encode(),
             ResponseBody::DescribeTopicPartitionsV0(inner) => inner.encode(),
+            ResponseBody::FetchV16(inner) => inner.encode(),
         }
     }
 }
@@ -160,6 +163,13 @@ Support Request Header v2, Describe Topic Partitions V0.",
                 RequestHeader::RequestHeaderV2(header),
                 RequestBody::DescribeTopicPartitionsV0(body),
             ) => Ok(execute_describe_topic_partitions(header, body)),
+            (header, body) => create_err(header, body),
+        }
+    } else if request_api_key == FETCH_API_INFO.api_key {
+        match (&request.header, &request.body) {
+            (RequestHeader::RequestHeaderV2(header), RequestBody::FetchV16(body)) => {
+                Ok(execute_fetch(header, body))
+            }
             (header, body) => create_err(header, body),
         }
     } else {
