@@ -1,29 +1,37 @@
 use std::{
-    io::Read,
+    io::{Cursor, Read, Seek},
+    mem,
     ops::{Deref, DerefMut},
 };
 
-use crate::{decode::Decode, encode::Encode};
+use bitflags::bitflags;
+use uuid::Uuid;
+
+use crate::{
+    decode::{Decode, DecodeError, DecodeResult},
+    describe_topic_partitions::RepicaNode,
+    encode::Encode,
+};
 
 const VARINTS_MASK: u8 = 0x7f;
 const PAY_LOAD_BIT_NUM: u8 = 7;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-pub struct Varint {
+pub struct VarInt {
     bytes: Vec<u8>,
 }
 
 #[inline(always)]
-fn zigzag_encode(n: i64) -> u64 {
+fn zigzag_encode_64bit(n: i64) -> u64 {
     ((n << 1) ^ (n >> 63)) as u64
 }
 
 #[inline(always)]
-fn zigzag_decode(n: u64) -> i64 {
+fn zigzag_decode_64bit(n: u64) -> i64 {
     ((n >> 1) as i64) ^ (-((n & 0x01) as i64))
 }
 
-impl Varint {
+impl VarInt {
     pub fn new(inner: Vec<u8>) -> Self {
         Self { bytes: inner }
     }
@@ -39,12 +47,12 @@ impl Varint {
             n >>= PAY_LOAD_BIT_NUM;
         }
         bytes.push(byte);
-        Varint::new(bytes)
+        VarInt::new(bytes)
     }
 
     pub fn from_i64(n: i64) -> Self {
-        let n = zigzag_encode(n);
-        Varint::from_u64(n)
+        let n = zigzag_encode_64bit(n);
+        VarInt::from_u64(n)
     }
 
     pub fn as_u64(&self) -> u64 {
@@ -58,7 +66,7 @@ impl Varint {
 
     pub fn as_i64(&self) -> i64 {
         let n = self.as_u64();
-        zigzag_decode(n)
+        zigzag_decode_64bit(n)
     }
 
     pub fn as_bytes(&self) -> &Vec<u8> {
@@ -70,13 +78,13 @@ impl Varint {
     }
 }
 
-impl Encode for Varint {
+impl Encode for VarInt {
     fn encode(&self) -> Vec<u8> {
         self.bytes.clone()
     }
 }
 
-impl Decode for Varint {
+impl Decode for VarInt {
     fn decode(buffer: &mut std::io::Cursor<&[u8]>) -> crate::decode::DecodeResult<Self>
     where
         Self: Sized,
@@ -88,7 +96,91 @@ impl Decode for Varint {
             byte = u8::decode(buffer)?;
         }
         bytes.push(byte);
-        Ok(Varint::new(bytes))
+        Ok(VarInt::new(bytes))
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct VarLong {
+    bytes: Vec<u8>,
+}
+
+#[inline(always)]
+fn zigzag_encode_128bit(n: i128) -> u128 {
+    ((n << 1) ^ (n >> 127)) as u128
+}
+
+#[inline(always)]
+fn zigzag_decode_128bit(n: u128) -> i128 {
+    ((n >> 1) as i128) ^ (-((n & 0x01) as i128))
+}
+
+impl VarLong {
+    pub fn new(inner: Vec<u8>) -> Self {
+        Self { bytes: inner }
+    }
+
+    pub fn from_u128(mut n: u128) -> Self {
+        let mut bytes = vec![];
+        let mut byte = n as u8 & VARINTS_MASK;
+        n >>= PAY_LOAD_BIT_NUM;
+        while n > 0 {
+            byte |= !VARINTS_MASK;
+            bytes.push(byte);
+            byte = n as u8 & VARINTS_MASK;
+            n >>= PAY_LOAD_BIT_NUM;
+        }
+        bytes.push(byte);
+        VarLong::new(bytes)
+    }
+
+    pub fn from_i128(n: i128) -> Self {
+        let n = zigzag_encode_128bit(n);
+        VarLong::from_u128(n)
+    }
+
+    pub fn as_u128(&self) -> u128 {
+        let mut n = 0;
+        for byte in self.bytes.iter().rev() {
+            let payload = byte & VARINTS_MASK;
+            n = n << PAY_LOAD_BIT_NUM | (payload as u128);
+        }
+        n
+    }
+
+    pub fn as_i128(&self) -> i128 {
+        let n = self.as_u128();
+        zigzag_decode_128bit(n)
+    }
+
+    pub fn as_bytes(&self) -> &Vec<u8> {
+        &self.bytes
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+}
+
+impl Encode for VarLong {
+    fn encode(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+}
+
+impl Decode for VarLong {
+    fn decode(buffer: &mut std::io::Cursor<&[u8]>) -> crate::decode::DecodeResult<Self>
+    where
+        Self: Sized,
+    {
+        let mut bytes = vec![];
+        let mut byte = u8::decode(buffer)?;
+        while byte >> PAY_LOAD_BIT_NUM == 1 {
+            bytes.push(byte);
+            byte = u8::decode(buffer)?;
+        }
+        bytes.push(byte);
+        Ok(VarLong::new(bytes))
     }
 }
 
@@ -133,12 +225,12 @@ impl<T: Decode> Decode for Array<T> {
     {
         let length = i32::decode(buffer)?;
         let inner = if length >= 0 {
-            let mut decode_vec = vec![];
+            let mut decode_res = vec![];
             for _ in 0..length {
                 let item = T::decode(buffer)?;
-                decode_vec.push(item);
+                decode_res.push(item);
             }
-            Some(decode_vec)
+            Some(decode_res)
         } else {
             None
         };
@@ -162,8 +254,7 @@ impl<T: Encode> Encode for CompactArray<T> {
         match &self.inner {
             None => vec![0x00],
             Some(array) => {
-                let mut encode_res =
-                    Varint::from_u64((array.len() + 1) as u64).into_bytes();
+                let mut encode_res = VarInt::from_u64((array.len() + 1) as u64).into_bytes();
                 for item in array.iter() {
                     encode_res.append(&mut item.encode());
                 }
@@ -178,14 +269,14 @@ impl<T: Decode> Decode for CompactArray<T> {
     where
         Self: Sized,
     {
-        let length = Varint::decode(buffer)?.as_u64();
+        let length = VarInt::decode(buffer)?.as_u64();
         let inner = if length > 0 {
-            let mut decode_vec = vec![];
+            let mut decode_res = vec![];
             for _ in 0..length - 1 {
                 let item = T::decode(buffer)?;
-                decode_vec.push(item);
+                decode_res.push(item);
             }
-            Some(decode_vec)
+            Some(decode_res)
         } else {
             None
         };
@@ -243,7 +334,7 @@ macro_rules! impl_inner_for_array {
     ($($type:tt<$gen:tt>),*) => {
         $(
             impl<$gen> $type<$gen> {
-                pub fn inner(&self) -> &Option<Vec<T>> {
+                pub fn get_inner(&self) -> &Option<Vec<T>> {
                     &self.inner
                 }
             }
@@ -309,7 +400,7 @@ impl CompactString {
 
 impl Encode for CompactString {
     fn encode(&self) -> Vec<u8> {
-        let mut encode_res = Varint::from_u64((self.inner.len() + 1) as u64).into_bytes();
+        let mut encode_res = VarInt::from_u64((self.inner.len() + 1) as u64).into_bytes();
         encode_res.extend(self.inner.as_bytes());
         encode_res
     }
@@ -320,7 +411,7 @@ impl Decode for CompactString {
     where
         Self: Sized,
     {
-        let length = Varint::decode(buffer)?.as_u64();
+        let length = VarInt::decode(buffer)?.as_u64();
         assert!(
             length > 0,
             "CompactString's length must bigger than 0 when decoding"
@@ -366,6 +457,7 @@ impl NullableString {
 impl Encode for NullableString {
     fn encode(&self) -> Vec<u8> {
         match &self.inner {
+            None => vec![0xff; mem::size_of::<i16>()],
             Some(s) => {
                 if s.len() > i16::MAX as usize {
                     panic!(
@@ -379,7 +471,6 @@ impl Encode for NullableString {
                     encode_res
                 }
             }
-            None => vec![0xff; 2],
         }
     }
 }
@@ -418,7 +509,7 @@ impl Encode for CompactNullableString {
         match &self.inner {
             None => vec![0x00],
             Some(s) => {
-                let mut encode_res = Varint::from_u64((s.len() + 1) as u64).into_bytes();
+                let mut encode_res = VarInt::from_u64((s.len() + 1) as u64).into_bytes();
                 encode_res.extend(s.as_bytes());
                 encode_res
             }
@@ -431,7 +522,7 @@ impl Decode for CompactNullableString {
     where
         Self: Sized,
     {
-        let length = Varint::decode(buffer)?.as_u64();
+        let length = VarInt::decode(buffer)?.as_u64();
         let inner = if length > 0 {
             let mut string_buffer = vec![0; (length - 1) as usize]; //TODO 是否需要预先置零
             buffer.read_exact(&mut string_buffer)?;
