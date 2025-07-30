@@ -982,3 +982,33 @@ pub struct RecordHeader {
     key: CompactString,
     value: CompactArray<u8>,
 }
+
+pub fn display_bytes(bytes: &[u8]) -> String {
+    let mut s = String::new();
+
+    let mut col = 0x00;
+    let mut row = 0x00;
+
+    s.push_str("   ");
+    for i in 0..min(bytes.len(), 16) {
+        s = format!("{}{:02x} ", s, i);
+    }
+    s = format!("{}\n", s);
+
+    for byte in bytes {
+        if col == 0 {
+            s = format!("{}{:02x} ", s, row);
+            row += 0x10;
+        }
+        s = format!("{}{:02x} ", s, byte);
+        col += 1;
+        if col == 0x10 {
+            col = 0x00;
+            s = format!("{}\n", s);
+        }
+    }
+    if col != 0x00 {
+        s = format!("{}\n", s);
+    }
+    s
+}
