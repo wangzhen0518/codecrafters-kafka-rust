@@ -11,7 +11,7 @@ use lazy_static::lazy_static;
 use uuid::Uuid;
 
 use crate::{
-    common_struct::{CompactArray, CompactString, RecordBatch, RecordValue},
+    common_struct::{display_bytes, CompactArray, CompactString, RecordBatch, RecordValue},
     decode::{Decode, DecodeError, DecodeResult},
     describe_topic_partitions::{TopicAuthorizedOperations, TopicInfo, TopicPartition},
 };
@@ -118,11 +118,11 @@ fn init_internel_states(metadata_log: &MetadataLog) {
 pub fn read_record_batches(path: &Path) -> DecodeResult<Vec<RecordBatch>> {
     if path.exists() {
         let log_content = fs::read(path)?; //TODO 支持异步
-                                           // tracing::debug!(
-                                           //     "Read: {:?}\nContent:\n{}",
-                                           //     path,
-                                           //     display_bytes(&log_content)
-                                           // );
+        // tracing::debug!(
+        //     "Read: {:?}\nContent:\n{}",
+        //     path,
+        //     display_bytes(&log_content)
+        // );
 
         let mut buffer = Cursor::new(log_content.as_ref());
         let mut record_batches = vec![];
