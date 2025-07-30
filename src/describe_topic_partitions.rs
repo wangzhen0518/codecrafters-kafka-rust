@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    io::Cursor,
-    sync::{Arc, Mutex},
-};
+use std::io::Cursor;
 
 use bitflags::bitflags;
 use lazy_static::lazy_static;
@@ -10,10 +6,10 @@ use uuid::Uuid;
 
 use crate::{
     api_versions::{ApiKey, ApiVersionsResponseBodyV4, UNSUPPORTED_VERSION_ERROR},
-    common_struct::{CompactArray, CompactString, RecordValue, TagBuffer},
+    common_struct::{CompactArray, CompactString, TagBuffer},
     decode::{Decode, DecodeError, DecodeResult},
     encode::Encode,
-    metadata_log::MetadataLog,
+    metadata_log::TOPIC_PARTITION_MAP,
     request_message::RequestHeaderV2,
     response_message::{ResponseBody, ResponseHeader, ResponseMessage},
 };
@@ -23,46 +19,6 @@ pub const UNKNOWN_TOPIC_OR_PARTITION: i16 = 3; //TODO 考虑怎么把错误码�
 lazy_static! {
     pub static ref DESCRIBE_TOPIC_PARTITIONS_API_INFO: ApiKey =
         ApiKey::new(75, 0, 0, TagBuffer::default());
-    pub static ref TOPIC_PARTITIONS: Arc<Mutex<HashMap<CompactString, TopicInfo>>> = {
-        let map = HashMap::from([
-            // (
-            // "foo".to_string(),
-            // TopicInfo {
-            //     name: "foo".to_string(),
-            //     id: Uuid::from_u128(0xe392806d_b5334810_ba030b43_c49b60fc),
-            //     is_internal: false,
-            //     partitions_array: vec![
-            //         TopicPartition {
-            //             error_code: 0,
-            //             index: 0,
-            //             leader_id: 1,
-            //             leader_epoch: 0,
-            //             repica_nodes: vec![RepicaNode::new(1)],
-            //             isr_nodes: vec![RepicaNode::new(1)],
-            //             eligible_leader_replicas: vec![],
-            //             last_known_elr: vec![],
-            //             offline_replicas: vec![],
-            //             tag_buffer: TagBuffer::new(None),
-            //         },
-            //         TopicPartition {
-            //             error_code: 0,
-            //             index: 1,
-            //             leader_id: 1,
-            //             leader_epoch: 0,
-            //             repica_nodes: vec![RepicaNode::new(1)],
-            //             isr_nodes: vec![RepicaNode::new(1)],
-            //             eligible_leader_replicas: vec![],
-            //             last_known_elr: vec![],
-            //             offline_replicas: vec![],
-            //             tag_buffer: TagBuffer::new(None),
-            //         },
-            //     ],
-            //     topic_authorized_operations: TopicAuthorizedOperations::default(),
-            // },
-        // )
-        ]);
-        Arc::new(Mutex::new(map)) //TODO 考虑异步初始化的事
-    };
 }
 
 pub struct TopicInfo {
@@ -157,16 +113,16 @@ pub struct TopicResponse {
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct TopicPartition {
-    error_code: i16,
-    index: i32,
-    leader_id: i32,
-    leader_epoch: i32,
-    repica_nodes: CompactArray<RepicaNode>,
-    isr_nodes: CompactArray<RepicaNode>,
-    eligible_leader_replicas: CompactArray<RepicaNode>,
-    last_known_elr: CompactArray<RepicaNode>,
-    offline_replicas: CompactArray<RepicaNode>,
-    tag_buffer: TagBuffer,
+    pub error_code: i16,
+    pub index: i32,
+    pub leader_id: i32,
+    pub leader_epoch: i32,
+    pub repica_nodes: CompactArray<RepicaNode>,
+    pub isr_nodes: CompactArray<RepicaNode>,
+    pub eligible_leader_replicas: CompactArray<RepicaNode>,
+    pub last_known_elr: CompactArray<RepicaNode>,
+    pub offline_replicas: CompactArray<RepicaNode>,
+    pub tag_buffer: TagBuffer,
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -229,57 +185,6 @@ impl Decode for TopicAuthorizedOperations {
     }
 }
 
-pub fn init_topic_partitions(metadata_log: &MetadataLog) {
-    for record_batch in metadata_log.get_record_batches() {
-        let mut found = false;
-        let mut topic_info = TopicInfo {
-            name: CompactString::default(),
-            id: Uuid::nil(),
-            is_internal: false,
-            partitions_array: CompactArray::empty(),
-            topic_authorized_operations: TopicAuthorizedOperations::default(),
-        };
-        if let Some(records) = record_batch.get_records().get_inner() {
-            for record in records {
-                match record.get_value() {
-                    RecordValue::Topic(topic) => {
-                        found = true;
-                        topic_info.name = topic.name.clone();
-                        topic_info.id = topic.id;
-                    }
-                    RecordValue::Partition(partition) => {
-                        found = true;
-                        let topic_partition = TopicPartition {
-                            error_code: 0,                //TODO 包含在哪里
-                            index: partition.parition_id, //TODO 是否是同一个属性
-                            leader_id: partition.leader_id,
-                            leader_epoch: partition.leader_epoch,
-                            repica_nodes: partition.replica_nodes.clone(),
-                            isr_nodes: partition.isr_nodes.clone(),
-                            eligible_leader_replicas: CompactArray::empty(), //TODO 包含在哪里
-                            last_known_elr: CompactArray::empty(),           //TODO 包含在哪里
-                            offline_replicas: CompactArray::empty(),         //TODO 包含在哪里
-                            tag_buffer: partition.tag_buffers.clone(),
-                        };
-                        topic_info
-                            .partitions_array
-                            .as_mut()
-                            .unwrap()
-                            .push(topic_partition);
-                    }
-                    _ => {}
-                }
-            }
-        }
-        if found {
-            TOPIC_PARTITIONS
-                .lock()
-                .expect("Failed to get TOPIC_PARITIONS's lock")
-                .insert(topic_info.name.clone(), topic_info);
-        }
-    }
-}
-
 pub fn execute_describe_topic_partitions(
     header: &RequestHeaderV2,
     body: &DescribeTopicPartitionsRequestBodyV0,
@@ -304,7 +209,7 @@ pub fn execute_describe_topic_partitions(
     let mut describe_topics = vec![];
     if let Some(topics) = body.topics.as_ref() {
         for request_topic in topics.iter() {
-            let resp_topic = if let Some(topic_info) = TOPIC_PARTITIONS
+            let resp_topic = if let Some(topic_info) = TOPIC_PARTITION_MAP
                 .lock()
                 .expect("Failed to get TOPIC_PARTITIONS")
                 .get(&request_topic.name)

@@ -795,7 +795,7 @@ pub struct Record {
     pub attributes: i8,
     pub timestamp_delta: VarLong,
     pub offset_delta: VarInt,
-    pub key: RecordKey, //TODO 检查 key 的 encode, decode
+    pub key: RecordKey,
     pub value: RecordValue,
     pub headers_array_count: CompactArray<RecordHeader>,
 }
@@ -939,7 +939,7 @@ pub struct ParitionRecord {
     pub record_type: i8,
     pub version: i8,
     pub parition_id: i32,
-    pub topic_uuid: Uuid,
+    pub topic_id: Uuid,
     pub replica_nodes: CompactArray<RepicaNode>,
     pub isr_nodes: CompactArray<RepicaNode>,
     pub removing_replicas_nodes: CompactArray<RepicaNode>,
