@@ -87,24 +87,6 @@ impl RequestHeader {
             RequestHeader::RequestHeaderV2(header) => header.request_api_key,
         }
     }
-
-    pub fn request_api_version(&self) -> i16 {
-        match self {
-            RequestHeader::RequestHeaderV2(header) => header.request_api_version,
-        }
-    }
-
-    pub fn correlation_id(&self) -> i32 {
-        match self {
-            RequestHeader::RequestHeaderV2(header) => header.correlation_id,
-        }
-    }
-
-    pub fn client_id(&self) -> &str {
-        match self {
-            RequestHeader::RequestHeaderV2(header) => &header.client_id,
-        }
-    }
 }
 
 impl Encode for RequestHeader {

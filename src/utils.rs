@@ -3,8 +3,6 @@ use std::io::Cursor;
 use bytes::Buf;
 use paste::paste;
 
-pub const U32_SIZE: usize = std::mem::size_of::<i32>();
-
 // 使用宏为所有整数类型实现 Encode
 macro_rules! impl_peek_for_integers {
     ($($type:ty),*) => {

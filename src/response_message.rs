@@ -98,25 +98,10 @@ pub struct ResponseHeaderV0 {
     correlation_id: i32,
 }
 
-impl ResponseHeaderV0 {
-    pub fn new(correlation_id: i32) -> Self {
-        ResponseHeaderV0 { correlation_id }
-    }
-}
-
 #[derive(Debug, Encode, Decode)]
 pub struct ResponseHeaderV1 {
     correlation_id: i32,
     tag_buffer: TagBuffer,
-}
-
-impl ResponseHeaderV1 {
-    pub fn new(correlation_id: i32, tag_buffer: TagBuffer) -> Self {
-        ResponseHeaderV1 {
-            correlation_id,
-            tag_buffer,
-        }
-    }
 }
 
 #[derive(Debug)]
