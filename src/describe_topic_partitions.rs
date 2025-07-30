@@ -9,7 +9,7 @@ use crate::{
     common_struct::{CompactArray, CompactString, TagBuffer},
     decode::{Decode, DecodeError, DecodeResult},
     encode::Encode,
-    metadata_log::TOPIC_PARTITION_MAP,
+    metadata_log::TOPIC_INFO_MAP,
     request_message::RequestHeaderV2,
     response_message::{ResponseBody, ResponseHeader, ResponseMessage},
 };
@@ -209,7 +209,7 @@ pub fn execute_describe_topic_partitions(
     let mut describe_topics = vec![];
     if let Some(topics) = body.topics.as_ref() {
         for request_topic in topics.iter() {
-            let resp_topic = if let Some(topic_info) = TOPIC_PARTITION_MAP
+            let resp_topic = if let Some(topic_info) = TOPIC_INFO_MAP
                 .lock()
                 .expect("Failed to get TOPIC_PARTITIONS")
                 .get(&request_topic.name)

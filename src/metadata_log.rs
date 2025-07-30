@@ -12,14 +12,16 @@ use uuid::Uuid;
 
 use crate::{
     common_struct::{CompactArray, CompactString, RecordBatch, RecordValue},
-    decode::{Decode, DecodeResult},
+    decode::{Decode, DecodeError, DecodeResult},
     describe_topic_partitions::{TopicAuthorizedOperations, TopicInfo, TopicPartition},
 };
 
 lazy_static! {
-    pub static ref TOPIC_PARTITION_MAP: Arc<Mutex<HashMap<CompactString, TopicInfo>>> =
-        Arc::new(Mutex::new(HashMap::new()));
     pub static ref TOPIC_ID_NAME_MAP: Arc<Mutex<HashMap<Uuid, CompactString>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+    pub static ref TOPIC_INFO_MAP: Arc<Mutex<HashMap<CompactString, TopicInfo>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+    pub static ref TOPIC_RECORD_BATCH_MAP: Arc<Mutex<HashMap<CompactString, Vec<RecordBatch>>>> =
         Arc::new(Mutex::new(HashMap::new()));
 }
 
@@ -82,6 +84,21 @@ fn init_internel_states(metadata_log: &MetadataLog) {
             }
         }
         if found {
+            let mut topic_record_batch_map = TOPIC_RECORD_BATCH_MAP
+                .lock()
+                .expect("Failed to get TOPIC_RECORD_BATCH_MAP lock");
+            let mut record_batch = record_batch.clone();
+            match topic_record_batch_map.get_mut(&topic_info.name) {
+                None => {
+                    record_batch.base_offset = 0;
+                    topic_record_batch_map.insert(topic_info.name.clone(), vec![record_batch]);
+                }
+                Some(array) => {
+                    record_batch.base_offset = array.len() as i64;
+                    array.push(record_batch);
+                }
+            }
+
             topic_info_array.push(topic_info);
         }
     }
@@ -89,7 +106,7 @@ fn init_internel_states(metadata_log: &MetadataLog) {
     let mut topic_id_name_map = TOPIC_ID_NAME_MAP
         .lock()
         .expect("Failed to get TOPIC_ID_NAME_MAP lock");
-    let mut topic_partition_map = TOPIC_PARTITION_MAP
+    let mut topic_partition_map = TOPIC_INFO_MAP
         .lock()
         .expect("Failed to get TOPIC_PARTITION_MAP's lock");
     for topic_info in topic_info_array {
@@ -98,12 +115,14 @@ fn init_internel_states(metadata_log: &MetadataLog) {
     }
 }
 
-pub fn init_read_metadata_log() -> DecodeResult<()> {
-    let metadata_log_file =
-        Path::new("/tmp/kraft-combined-logs/__cluster_metadata-0/00000000000000000000.log");
-    // let metadata_log_file = Path::new("tmp/demo.log");
-    if metadata_log_file.exists() {
-        let log_content = fs::read(metadata_log_file)?; //TODO 支持异步
+pub fn read_record_batches(path: &Path) -> DecodeResult<Vec<RecordBatch>> {
+    if path.exists() {
+        let log_content = fs::read(path)?; //TODO 支持异步
+                                           // tracing::debug!(
+                                           //     "Read: {:?}\nContent:\n{}",
+                                           //     path,
+                                           //     display_bytes(&log_content)
+                                           // );
 
         let mut buffer = Cursor::new(log_content.as_ref());
         let mut record_batches = vec![];
@@ -111,17 +130,21 @@ pub fn init_read_metadata_log() -> DecodeResult<()> {
             let record_batch = RecordBatch::decode(&mut buffer)?; // loop 循环 decode
             record_batches.push(record_batch);
         }
-
-        let metadata_log = MetadataLog::new(record_batches);
-        // tracing::debug!("Metadata Log:\n{:#?}", &metadata_log);
-
-        init_internel_states(&metadata_log);
+        Ok(record_batches)
     } else {
-        panic!(
-            "Cannot find metadata log file: {}",
-            metadata_log_file.to_string_lossy()
-        );
+        Err(DecodeError::Other(
+            format!("Cannot find metadata log file: {}", path.to_string_lossy()).into(),
+        ))
     }
+}
+
+pub fn init_read_metadata_log() -> DecodeResult<()> {
+    let metadata_log_file =
+        Path::new("/tmp/kraft-combined-logs/__cluster_metadata-0/00000000000000000000.log");
+    // let metadata_log_file = Path::new("tmp/demo.bin");
+    let record_batches = read_record_batches(metadata_log_file)?;
+    let metadata_log = MetadataLog::new(record_batches);
+    init_internel_states(&metadata_log);
 
     Ok(())
 }
