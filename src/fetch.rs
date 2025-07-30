@@ -3,10 +3,10 @@ use uuid::Uuid;
 
 use crate::{
     api_versions::{ApiKey, ApiVersionsResponseBodyV4, UNSUPPORTED_VERSION_ERROR},
-    common_struct::{CompactArray, CompactString, Record, TagBuffer},
+    common_struct::{CompactArray, CompactString, RecordBatch, TagBuffer},
     decode::Decode,
     encode::Encode,
-    metadata_log::TOPIC_ID_NAME_MAP,
+    metadata_log::{read_record_batches, TOPIC_ID_NAME_MAP},
     request_message::RequestHeaderV2,
     response_message::{ResponseBody, ResponseHeader, ResponseMessage},
 };
@@ -82,7 +82,7 @@ pub struct FetchPartitionResponse {
     log_start_offset: i64,
     aborted_transactions: CompactArray<Transaction>,
     preferred_read_replica: i32,
-    records: CompactArray<Record>,
+    record_batches: CompactArray<RecordBatch>,
     tag_buffer: TagBuffer,
 }
 
@@ -96,7 +96,7 @@ impl FetchPartitionResponse {
             log_start_offset: 0,
             aborted_transactions: CompactArray::empty(),
             preferred_read_replica: 0,
-            records: CompactArray::empty(),
+            record_batches: CompactArray::empty(),
             tag_buffer: TagBuffer::default(),
         }
     }
@@ -130,26 +130,48 @@ pub fn execute_fetch(header: &RequestHeaderV2, body: &FetchRequestBodyV16) -> Re
     let mut fetch_topics = vec![];
     if let Some(topics) = body.topics.as_ref() {
         for request_topic in topics.iter() {
-            let resp_topic = if let Some(_topic_name) = TOPIC_ID_NAME_MAP
+            if let Some(topic_name) = TOPIC_ID_NAME_MAP
                 .lock()
-                .expect("Failed to get TOPIC_PARTITIONS")
+                .expect("Failed to get TOPIC_ID_NAME_MAP")
                 .get(&request_topic.topic_id)
             {
-                FetchTopicResponse {
-                    topic_id: request_topic.topic_id,
-                    partitions: CompactArray::new(Some(vec![FetchPartitionResponse::new_empty(0)])),
-                    tag_buffer: TagBuffer::default(),
+                if let Some(partitions) = request_topic.partitions.as_ref() {
+                    for partition in partitions {
+                        let topic_log_file = format!(
+                            "/tmp/kraft-combined-logs/{}-{}/00000000000000000000.log",
+                            topic_name.as_str(),
+                            partition.partition_index
+                        );
+                        let record_batches = read_record_batches(topic_log_file.as_ref())
+                            .expect("Failed to read topic log file");
+                        let resp_topic = FetchTopicResponse {
+                            topic_id: request_topic.topic_id,
+                            partitions: CompactArray::new(Some(vec![FetchPartitionResponse {
+                                partition_index: partition.partition_index,
+                                error_code: 0,
+                                high_watermark: 0,
+                                last_stable_offset: 0,
+                                log_start_offset: 0,
+                                aborted_transactions: CompactArray::default(),
+                                preferred_read_replica: 0,
+                                record_batches: CompactArray::new(Some(record_batches)),
+                                tag_buffer: TagBuffer::default(),
+                            }])),
+                            tag_buffer: TagBuffer::default(),
+                        };
+                        fetch_topics.push(resp_topic);
+                    }
                 }
             } else {
-                FetchTopicResponse {
+                let resp_topic = FetchTopicResponse {
                     topic_id: request_topic.topic_id,
                     partitions: CompactArray::new(Some(vec![FetchPartitionResponse::new_empty(
                         UNKNOWN_TOPIC_ID_ERROR,
                     )])),
                     tag_buffer: TagBuffer::default(),
-                }
+                };
+                fetch_topics.push(resp_topic);
             };
-            fetch_topics.push(resp_topic);
         }
     }
 

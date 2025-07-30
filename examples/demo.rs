@@ -2,9 +2,12 @@
 
 use bincode::Decode;
 use bytes::Bytes;
-use std::mem;
+use std::{io::Cursor, mem, path::Path};
 
-use codecrafters_kafka::response_message::{ResponseHeaderV0, ResponseMessage};
+use codecrafters_kafka::{
+    common_struct::display_bytes,
+    response_message::{ResponseHeaderV0, ResponseMessage},
+};
 
 #[derive(Debug, Decode)]
 struct MyStruct {
@@ -49,4 +52,8 @@ fn main() {
 
     let x = as_u8(0x32_11);
     println!("{}", x);
+
+    let p = Path::new("/tmp/kraft-combined-logs/__cluster_metadata-0/00000000000000000000.log");
+    let b = Bytes::from_owner(vec![0x10, 0x01, 0x11]);
+    println!("Path: {:?}\nBuffer: {:?}\n{}", p, b, display_bytes(&b));
 }
