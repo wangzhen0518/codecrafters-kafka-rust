@@ -26,17 +26,18 @@ async fn process(socket: TcpStream) {
         .await
         .expect("Failed to read content from socket")
     {
+        tracing::debug!("Receive Request:\n{:#?}", request);
+
         let mut response = response_message::execute_request(&request)
             .await
             .expect("Failed to execute request");
+
+        tracing::debug!("Response:\n{:#?}", response);
 
         connection
             .write_response(&mut response)
             .await
             .expect("Failed to write response");
-
-        tracing::debug!("Receive Request:\n{:#?}", request);
-        tracing::debug!("Response:\n{:#?}", response);
     }
 }
 

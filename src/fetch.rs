@@ -8,15 +8,15 @@ use uuid::Uuid;
 
 use crate::{
     api_versions::{ApiKey, ApiVersionsResponseBodyV4, UNSUPPORTED_VERSION_ERROR},
-    common_struct::{CompactArray, CompactString, RecordBatch, TagBuffer},
+    common_struct::{CompactArray, CompactString, Record, TagBuffer},
     decode::Decode,
-    describe_topic_partitions::TopicRequest,
     encode::Encode,
     request_message::RequestHeaderV2,
     response_message::{ResponseBody, ResponseHeader, ResponseMessage},
 };
 
 pub const INVALID_FETCH_SIZE_ERROR: i16 = 4;
+pub const UNKNOWN_TOPIC_ID_ERROR: i16 = 100;
 
 lazy_static! {
     pub static ref FETCH_API_INFO: ApiKey = ApiKey::new(1, 0, 16, TagBuffer::default());
@@ -32,7 +32,7 @@ pub struct FetchRequestBodyV16 {
     isolation_level: i8,
     session_id: i32,
     session_epoch: i32,
-    topics: CompactArray<TopicRequest>,
+    topics: CompactArray<FetchTopicRequest>,
     forgotten_topics_data: CompactArray<ForgottenTopicRequest>,
     rack_id: CompactString,
     tag_buffer: TagBuffer,
@@ -85,10 +85,27 @@ pub struct FetchPartitionResponse {
     error_code: i16,
     high_watermark: i64,
     last_stable_offset: i64,
+    log_start_offset: i64,
     aborted_transactions: CompactArray<Transaction>,
     preferred_read_replica: i32,
-    records: RecordBatch,
+    records: CompactArray<Record>,
     tag_buffer: TagBuffer,
+}
+
+impl FetchPartitionResponse {
+    pub fn new_unknown_topic_partition() -> Self {
+        FetchPartitionResponse {
+            partition_index: 0,
+            error_code: UNKNOWN_TOPIC_ID_ERROR,
+            high_watermark: 0,
+            last_stable_offset: 0,
+            log_start_offset: 0,
+            aborted_transactions: CompactArray::empty(),
+            preferred_read_replica: 0,
+            records: CompactArray::empty(),
+            tag_buffer: TagBuffer::default(),
+        }
+    }
 }
 
 #[derive(Debug, Encode, Decode)]
@@ -117,7 +134,32 @@ pub fn execute_fetch(header: &RequestHeaderV2, body: &FetchRequestBodyV16) -> Re
     }
 
     let mut fetch_topics = vec![];
-    if let Some(topics) = body.topics.as_ref() {}
+    if let Some(topics) = body.topics.as_ref() {
+        for request_topic in topics.iter() {
+            let resp_topic = if let Some(topic_info) = FETCH_TOPIC_PARTITIONS
+                .lock()
+                .expect("Failed to get TOPIC_PARTITIONS")
+                .get(&request_topic.topic_id)
+            {
+                FetchTopicResponse {
+                    topic_id: request_topic.topic_id,
+                    partitions: CompactArray::new(Some(vec![
+                        FetchPartitionResponse::new_unknown_topic_partition(),
+                    ])),
+                    tag_buffer: TagBuffer::default(),
+                }
+            } else {
+                FetchTopicResponse {
+                    topic_id: request_topic.topic_id,
+                    partitions: CompactArray::new(Some(vec![
+                        FetchPartitionResponse::new_unknown_topic_partition(),
+                    ])),
+                    tag_buffer: TagBuffer::default(),
+                }
+            };
+            fetch_topics.push(resp_topic);
+        }
+    }
 
     ResponseMessage::new(
         ResponseHeader::new_v1(correlation_id),
