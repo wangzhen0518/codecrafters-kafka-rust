@@ -856,7 +856,7 @@ pub enum RecordValue {
     Topic(TopicRecord),
     Partition(ParitionRecord),
     FeatureLevel(FeatureLevelRecord),
-    Unknown(VarInt),
+    Unknown(Vec<u8>),
 }
 
 impl RecordValue {
@@ -886,10 +886,9 @@ impl Encode for RecordValue {
                 encode_res.append(&mut record_encode);
                 encode_res
             }
-            RecordValue::Unknown(length) => {
-                let mut record_encode = vec![0x00; length.as_i64() as usize];
-                let mut encode_res = length.as_bytes().clone();
-                encode_res.append(&mut record_encode);
+            RecordValue::Unknown(record_encode) => {
+                let mut encode_res = VarInt::from_i64(record_encode.len() as i64).into_bytes();
+                encode_res.extend_from_slice(record_encode);
                 encode_res
             }
         }
@@ -904,22 +903,34 @@ impl Decode for RecordValue {
         let value_length = VarInt::decode(buffer)?;
         let _frame_version = i8::decode(buffer)?;
         let record_type = i8::decode(buffer)?;
+
         buffer.seek_relative(-2).expect("Failed to seek");
-        let record_value = match record_type {
-            RecordType::TOPIC_RECORD => RecordValue::Topic(TopicRecord::decode(buffer)?),
-            RecordType::PARITION_RECORD => RecordValue::Partition(ParitionRecord::decode(buffer)?),
-            RecordType::FEATURE_LEVEL_RECORD => {
-                RecordValue::FeatureLevel(FeatureLevelRecord::decode(buffer)?)
-            }
-            record_type => {
-                tracing::error!("Unknown record type: {}", record_type);
-                buffer
-                    .seek_relative(value_length.as_i64())
-                    .expect("Failed to seek");
-                RecordValue::Unknown(value_length)
+        let position = buffer.position();
+
+        let record_value = match parse_known_record(record_type, buffer) {
+            Ok(record_value) => record_value,
+            Err(err) => {
+                tracing::error!("{}", err);
+                buffer.set_position(position);
+                let mut record_encode = vec![0x00; value_length.as_i64() as usize];
+                buffer.read_exact(&mut record_encode)?;
+                RecordValue::Unknown(record_encode)
             }
         };
         Ok(record_value)
+    }
+}
+
+fn parse_known_record(record_type: i8, buffer: &mut Cursor<&[u8]>) -> DecodeResult<RecordValue> {
+    match record_type {
+        RecordType::TOPIC_RECORD => Ok(RecordValue::Topic(TopicRecord::decode(buffer)?)),
+        RecordType::PARITION_RECORD => Ok(RecordValue::Partition(ParitionRecord::decode(buffer)?)),
+        RecordType::FEATURE_LEVEL_RECORD => Ok(RecordValue::FeatureLevel(
+            FeatureLevelRecord::decode(buffer)?,
+        )),
+        record_type => Err(DecodeError::Other(
+            format!("Unknown record type: {}", record_type).into(),
+        )),
     }
 }
 
