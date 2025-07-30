@@ -1,4 +1,5 @@
 use std::{
+    cmp::min,
     io::{Cursor, Read, Seek},
     mem,
     ops::{Deref, DerefMut},
@@ -207,7 +208,7 @@ impl<T: Encode> Encode for Array<T> {
                         i32::MAX
                     );
                 } else {
-                    let mut encode_res = array.len().to_be_bytes().to_vec();
+                    let mut encode_res = (array.len() as i32).to_be_bytes().to_vec();
                     for item in array.iter() {
                         encode_res.append(&mut item.encode());
                     }
@@ -363,7 +364,7 @@ impl Encode for KafkaString {
                 i16::MAX
             );
         } else {
-            let mut encode_res = self.inner.len().to_be_bytes().to_vec();
+            let mut encode_res = (self.inner.len() as i16).to_be_bytes().to_vec();
             encode_res.extend(self.inner.as_bytes());
             encode_res
         }
@@ -466,7 +467,7 @@ impl Encode for NullableString {
                         i16::MAX
                     );
                 } else {
-                    let mut encode_res = s.len().to_be_bytes().to_vec();
+                    let mut encode_res = (s.len() as i16).to_be_bytes().to_vec();
                     encode_res.extend(s.as_bytes());
                     encode_res
                 }
@@ -555,7 +556,7 @@ impl Encode for KafkaBytes {
                 i32::MAX
             );
         } else {
-            let mut encode_res = self.inner.len().to_be_bytes().to_vec();
+            let mut encode_res = (self.inner.len() as i32).to_be_bytes().to_vec();
             encode_res.append(&mut self.inner.clone());
             encode_res
         }
@@ -632,7 +633,7 @@ impl Encode for NullableBytes {
                         i32::MAX
                     );
                 } else {
-                    let mut encode_res = array.len().to_be_bytes().to_vec();
+                    let mut encode_res = (array.len() as i32).to_be_bytes().to_vec();
                     encode_res.extend_from_slice(array);
                     encode_res
                 }
@@ -725,7 +726,7 @@ impl TagSection {
     }
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct RecordBatch {
     pub base_offset: i64,
     pub batch_length: i32,
