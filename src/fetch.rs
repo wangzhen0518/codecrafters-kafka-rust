@@ -1,8 +1,3 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
-
 use lazy_static::lazy_static;
 use uuid::Uuid;
 
@@ -11,6 +6,7 @@ use crate::{
     common_struct::{CompactArray, CompactString, Record, TagBuffer},
     decode::Decode,
     encode::Encode,
+    metadata_log::TOPIC_ID_NAME_MAP,
     request_message::RequestHeaderV2,
     response_message::{ResponseBody, ResponseHeader, ResponseMessage},
 };
@@ -20,8 +16,6 @@ pub const UNKNOWN_TOPIC_ID_ERROR: i16 = 100;
 
 lazy_static! {
     pub static ref FETCH_API_INFO: ApiKey = ApiKey::new(1, 0, 16, TagBuffer::default());
-    pub static ref FETCH_TOPIC_PARTITIONS: Arc<Mutex<HashMap<Uuid, CompactArray<FetchPartitionResponse>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
 }
 
 #[derive(Debug, Encode, Decode)]
@@ -93,10 +87,10 @@ pub struct FetchPartitionResponse {
 }
 
 impl FetchPartitionResponse {
-    pub fn new_unknown_topic_partition() -> Self {
+    pub fn new_empty(error_code: i16) -> Self {
         FetchPartitionResponse {
             partition_index: 0,
-            error_code: UNKNOWN_TOPIC_ID_ERROR,
+            error_code,
             high_watermark: 0,
             last_stable_offset: 0,
             log_start_offset: 0,
@@ -136,24 +130,22 @@ pub fn execute_fetch(header: &RequestHeaderV2, body: &FetchRequestBodyV16) -> Re
     let mut fetch_topics = vec![];
     if let Some(topics) = body.topics.as_ref() {
         for request_topic in topics.iter() {
-            let resp_topic = if let Some(topic_info) = FETCH_TOPIC_PARTITIONS
+            let resp_topic = if let Some(_topic_name) = TOPIC_ID_NAME_MAP
                 .lock()
                 .expect("Failed to get TOPIC_PARTITIONS")
                 .get(&request_topic.topic_id)
             {
                 FetchTopicResponse {
                     topic_id: request_topic.topic_id,
-                    partitions: CompactArray::new(Some(vec![
-                        FetchPartitionResponse::new_unknown_topic_partition(),
-                    ])),
+                    partitions: CompactArray::new(Some(vec![FetchPartitionResponse::new_empty(0)])),
                     tag_buffer: TagBuffer::default(),
                 }
             } else {
                 FetchTopicResponse {
                     topic_id: request_topic.topic_id,
-                    partitions: CompactArray::new(Some(vec![
-                        FetchPartitionResponse::new_unknown_topic_partition(),
-                    ])),
+                    partitions: CompactArray::new(Some(vec![FetchPartitionResponse::new_empty(
+                        UNKNOWN_TOPIC_ID_ERROR,
+                    )])),
                     tag_buffer: TagBuffer::default(),
                 }
             };
