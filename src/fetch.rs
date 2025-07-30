@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::{
     api_versions::{ApiKey, ApiVersionsResponseBodyV4, UNSUPPORTED_VERSION_ERROR},
-    common_struct::{CompactArray, CompactString, RecordBatch, TagBuffer},
+    common_struct::{CompactArray, CompactRecords, CompactString, TagBuffer},
     decode::Decode,
     encode::Encode,
     metadata_log::{read_record_batches, TOPIC_ID_NAME_MAP},
@@ -82,7 +82,7 @@ pub struct FetchPartitionResponse {
     log_start_offset: i64,
     aborted_transactions: CompactArray<Transaction>,
     preferred_read_replica: i32,
-    record_batches: CompactArray<RecordBatch>,
+    record_batches: CompactRecords,
     tag_buffer: TagBuffer,
 }
 
@@ -96,7 +96,7 @@ impl FetchPartitionResponse {
             log_start_offset: 0,
             aborted_transactions: CompactArray::empty(),
             preferred_read_replica: 0,
-            record_batches: CompactArray::empty(),
+            record_batches: CompactRecords::empty(),
             tag_buffer: TagBuffer::default(),
         }
     }
@@ -130,12 +130,12 @@ pub fn execute_fetch(header: &RequestHeaderV2, body: &FetchRequestBodyV16) -> Re
     let mut fetch_topics = vec![];
     if let Some(topics) = body.topics.as_ref() {
         for request_topic in topics.iter() {
-            let resp_topic = if let Some(topic_name) = TOPIC_ID_NAME_MAP
+            let partitions_inner = if let Some(topic_name) = TOPIC_ID_NAME_MAP
                 .lock()
                 .expect("Failed to get TOPIC_ID_NAME_MAP")
                 .get(&request_topic.topic_id)
             {
-                let partitions_inner = if let Some(partitions) = request_topic.partitions.as_ref() {
+                if let Some(partitions) = request_topic.partitions.as_ref() {
                     let mut partitions_inner = vec![];
                     for partition in partitions {
                         let topic_log_file = format!(
@@ -145,6 +145,7 @@ pub fn execute_fetch(header: &RequestHeaderV2, body: &FetchRequestBodyV16) -> Re
                         );
                         let record_batches = read_record_batches(topic_log_file.as_ref())
                             .expect("Failed to read topic log file");
+                        // let record_batches = vec![record_batches[0].clone()];
                         partitions_inner.push(FetchPartitionResponse {
                             partition_index: partition.partition_index,
                             error_code: 0,
@@ -153,29 +154,24 @@ pub fn execute_fetch(header: &RequestHeaderV2, body: &FetchRequestBodyV16) -> Re
                             log_start_offset: 0,
                             aborted_transactions: CompactArray::default(),
                             preferred_read_replica: 0,
-                            record_batches: CompactArray::new(Some(record_batches)),
+                            record_batches: CompactRecords::new(Some(record_batches)),
                             tag_buffer: TagBuffer::default(),
                         });
                     }
                     Some(partitions_inner)
                 } else {
                     None
-                };
-                FetchTopicResponse {
-                    topic_id: request_topic.topic_id,
-                    partitions: CompactArray::new(partitions_inner),
-                    tag_buffer: TagBuffer::default(),
                 }
             } else {
-                FetchTopicResponse {
-                    topic_id: request_topic.topic_id,
-                    partitions: CompactArray::new(Some(vec![FetchPartitionResponse::new_empty(
-                        UNKNOWN_TOPIC_ID_ERROR,
-                    )])),
-                    tag_buffer: TagBuffer::default(),
-                }
+                Some(vec![FetchPartitionResponse::new_empty(
+                    UNKNOWN_TOPIC_ID_ERROR,
+                )])
             };
-            fetch_topics.push(resp_topic);
+            fetch_topics.push(FetchTopicResponse {
+                topic_id: request_topic.topic_id,
+                partitions: CompactArray::new(partitions_inner),
+                tag_buffer: TagBuffer::default(),
+            });
         }
     }
 

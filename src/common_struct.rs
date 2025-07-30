@@ -6,6 +6,7 @@ use std::{
 };
 
 use bitflags::bitflags;
+use bytes::Buf;
 use uuid::Uuid;
 
 use crate::{
@@ -982,6 +983,63 @@ pub struct FeatureLevelRecord {
 pub struct RecordHeader {
     key: CompactString,
     value: CompactArray<u8>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CompactRecords {
+    inner: Option<Vec<RecordBatch>>,
+}
+
+impl CompactRecords {
+    pub fn new(inner: Option<Vec<RecordBatch>>) -> Self {
+        Self { inner }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            inner: Some(vec![]),
+        }
+    }
+}
+
+impl Encode for CompactRecords {
+    fn encode(&self) -> Vec<u8> {
+        match &self.inner {
+            None => vec![0x00],
+            Some(array) => {
+                let mut records_encode: Vec<u8> = array
+                    .iter()
+                    .flat_map(|record_batch| record_batch.encode())
+                    .collect();
+                let mut encode_res =
+                    VarInt::from_u64((records_encode.len() + 1) as u64).into_bytes();
+                encode_res.append(&mut records_encode);
+                encode_res
+            }
+        }
+    }
+}
+
+impl Decode for CompactRecords {
+    fn decode(buffer: &mut Cursor<&[u8]>) -> DecodeResult<Self>
+    where
+        Self: Sized,
+    {
+        let length = VarInt::decode(buffer)?.as_u64();
+        let inner = if length > 0 {
+            let mut inner_buffer = vec![0x00; (length - 1) as usize];
+            buffer.read_exact(&mut inner_buffer)?;
+            let mut inner_buffer = Cursor::new(inner_buffer.as_slice());
+            let mut record_batches = vec![];
+            while inner_buffer.has_remaining() {
+                record_batches.push(RecordBatch::decode(&mut inner_buffer)?);
+            }
+            Some(record_batches)
+        } else {
+            None
+        };
+        Ok(CompactRecords::new(inner))
+    }
 }
 
 pub fn display_bytes(bytes: &[u8]) -> String {
