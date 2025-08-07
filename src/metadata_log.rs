@@ -40,7 +40,7 @@ impl MetadataLog {
     }
 }
 
-fn init_internel_states(metadata_log: &MetadataLog) {
+fn init_internal_states(metadata_log: &MetadataLog) {
     let mut topic_info_array = vec![];
     for record_batch in metadata_log.get_record_batches() {
         let mut found = false;
@@ -144,7 +144,7 @@ pub fn init_read_metadata_log() -> DecodeResult<()> {
     // let metadata_log_file = Path::new("tmp/demo.bin");
     let record_batches = read_record_batches(metadata_log_file)?;
     let metadata_log = MetadataLog::new(record_batches);
-    init_internel_states(&metadata_log);
+    init_internal_states(&metadata_log);
 
     Ok(())
 }

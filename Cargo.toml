@@ -9,13 +9,14 @@ rust-version = "1.80"
 # anyhow = "1.0.98"                                                         # error handling
 bincode = { version = "2.0.1", features = ["serde", "std"] }
 bytes = "1.10.1"                                                          # helps manage buffers
+bitflags = "2.9.1"
+console-subscriber = "0.4.1"
+kafka-serde-derive = { path = "./kafka-serde-derive", version = "0.1.0" }
 lazy_static = "1.5.0"
 paste = "1.0.15"
 serde = { version = "1.0.219", features = ["derive"] }
 thiserror = "2.0.12"                                                      # error handling
-tokio = { version = "1.46.1", features = ["full"] }
+tokio = { version = "1.47.1", features = ["full"] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
-kafka-serde-derive = { path = "./kafka-serde-derive", version = "0.1.0" }
 uuid = { version = "1.17.0", features = ["v4"] }
-bitflags = "2.9.1"

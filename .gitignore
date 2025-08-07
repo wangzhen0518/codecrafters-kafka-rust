@@ -11,3 +11,4 @@ tmp/
 *.pdb
 
 .vscode/
+.idea/

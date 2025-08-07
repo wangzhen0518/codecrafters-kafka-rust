@@ -47,6 +47,7 @@ fn init() {
 
 #[tokio::main]
 async fn main() {
+    // console_subscriber::init();
     utils::config_logger();
 
     let listener = TcpListener::bind("127.0.0.1:9092")
